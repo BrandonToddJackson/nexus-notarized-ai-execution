@@ -17,9 +17,7 @@ Phase coverage:
 """
 
 import asyncio
-import hashlib
 from datetime import datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -795,7 +793,6 @@ class TestPhase3Sandbox:
     async def test_timeout_raises_tool_error(self):
         from nexus.tools.sandbox import Sandbox
         from nexus.exceptions import ToolError
-        import asyncio
 
         async def slow(**kwargs):
             await asyncio.sleep(10)

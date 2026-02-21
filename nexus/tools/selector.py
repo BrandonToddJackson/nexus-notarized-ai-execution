@@ -4,7 +4,6 @@ Uses LLM to determine which tool to use and with what parameters.
 Falls back to rule-based matching when LLM is unavailable.
 """
 
-from typing import Optional
 
 from nexus.types import PersonaContract, RetrievedContext, IntentDeclaration
 from nexus.tools.registry import ToolRegistry

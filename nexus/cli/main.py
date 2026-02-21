@@ -28,7 +28,7 @@ def main(
 
 
 # ── Core commands ──────────────────────────────────────────────────────────────
-from nexus.cli.commands import init, run, dev, seed
+from nexus.cli.commands import init, run, dev, seed  # noqa: E402
 
 app.command(name="init")(init.init_project)
 app.command(name="run")(run.run_task)
@@ -36,7 +36,7 @@ app.command(name="dev")(dev.dev_server)
 app.command(name="seed")(seed.seed_db)
 
 # ── NEXUS differentiators ──────────────────────────────────────────────────────
-from nexus.cli.commands import verify, replay, inspect, audit, gates
+from nexus.cli.commands import verify, replay, inspect, audit, gates  # noqa: E402
 
 app.command(name="verify", help="Verify Merkle chain integrity")(verify.verify_chain)
 app.command(name="replay", help="Step-by-step chain replay with gate results + CoT")(replay.replay_chain)
@@ -45,7 +45,7 @@ app.command(name="audit", help="View or export the audit ledger")(audit.audit_le
 app.command(name="gates", help="Show gate thresholds and pass/fail statistics")(gates.gates_status)
 
 # ── Parity commands ────────────────────────────────────────────────────────────
-from nexus.cli.commands import config, tools
+from nexus.cli.commands import config, tools  # noqa: E402
 
 app.command(name="config", help="Show resolved configuration")(config.config_show)
 app.command(name="tools", help="List all registered tools")(tools.tools_list)

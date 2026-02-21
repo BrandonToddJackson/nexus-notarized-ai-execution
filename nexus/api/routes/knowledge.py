@@ -1,7 +1,7 @@
 """Knowledge base CRUD: ingest docs, query, manage namespaces."""
 
 from fastapi import APIRouter, Request
-from nexus.api.schemas import IngestRequest, KnowledgeQueryRequest
+from nexus.api.schemas import IngestRequest
 from nexus.types import KnowledgeDocument
 
 router = APIRouter(tags=["knowledge"])

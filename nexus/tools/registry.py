@@ -1,6 +1,6 @@
 """Central registry of all available tools."""
 
-from typing import Optional
+from typing import Any, Callable
 
 from nexus.types import ToolDefinition, PersonaContract
 from nexus.exceptions import ToolError
@@ -11,9 +11,9 @@ class ToolRegistry:
 
     def __init__(self):
         self._tools: dict[str, ToolDefinition] = {}
-        self._implementations: dict[str, callable] = {}
+        self._implementations: dict[str, Callable[..., Any]] = {}
 
-    def register(self, definition: ToolDefinition, implementation: callable) -> None:
+    def register(self, definition: ToolDefinition, implementation: Callable[..., Any]) -> None:
         """Register a tool with its definition and implementation function.
 
         Args:
@@ -23,7 +23,7 @@ class ToolRegistry:
         self._tools[definition.name] = definition
         self._implementations[definition.name] = implementation
 
-    def get(self, name: str) -> tuple[ToolDefinition, callable]:
+    def get(self, name: str) -> tuple[ToolDefinition, Callable[..., Any]]:
         """Get tool definition and implementation.
 
         Args:

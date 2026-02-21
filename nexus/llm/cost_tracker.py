@@ -3,14 +3,14 @@
 import logging
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-
 import litellm
 from litellm import ModelResponse, Usage
 
 from nexus.types import CostRecord
 from nexus.exceptions import BudgetExceeded
 from nexus.config import config
+
+logger = logging.getLogger(__name__)
 
 
 class CostTracker:

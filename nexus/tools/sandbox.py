@@ -5,7 +5,7 @@ The architecture slot exists but the implementation is lightweight.
 """
 
 import asyncio
-from typing import Any
+from typing import Any, Callable
 
 from nexus.exceptions import ToolError
 
@@ -15,7 +15,7 @@ class Sandbox:
 
     async def execute(
         self,
-        tool_fn: callable,
+        tool_fn: Callable[..., Any],
         params: dict,
         timeout: int = 30,
     ) -> Any:
@@ -38,9 +38,7 @@ class Sandbox:
             ToolError: On timeout or any execution error
         """
         import inspect
-        import time
 
-        start = time.monotonic()
         try:
             call = tool_fn(**params)
             if inspect.iscoroutine(call):
@@ -51,7 +49,6 @@ class Sandbox:
                     asyncio.get_event_loop().run_in_executor(None, lambda: call),
                     timeout=timeout,
                 )
-            elapsed = time.monotonic() - start
             return result
         except asyncio.TimeoutError:
             raise ToolError(

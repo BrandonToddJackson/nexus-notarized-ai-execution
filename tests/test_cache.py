@@ -1,6 +1,6 @@
 """Tests for nexus/cache/fingerprints.py and nexus/cache/redis_client.py."""
 
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

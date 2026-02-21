@@ -13,15 +13,12 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
-# Per-request callbacks override instance callbacks — async-safe via ContextVar
-_request_callbacks: contextvars.ContextVar = contextvars.ContextVar("_nexus_callbacks", default=None)
-
 from nexus.types import (
-    ChainPlan, Seal, IntentDeclaration, PersonaContract,
+    ChainPlan, Seal, PersonaContract,
     ActionStatus, ChainStatus, GateVerdict, ReasoningDecision,
 )
 from nexus.exceptions import (
-    NexusError, AnomalyDetected, ChainAborted, EscalationRequired,
+    AnomalyDetected, ChainAborted, EscalationRequired,
 )
 from nexus.config import NexusConfig
 from nexus.core.personas import PersonaManager
@@ -29,7 +26,6 @@ from nexus.core.anomaly import AnomalyEngine
 from nexus.core.notary import Notary
 from nexus.core.ledger import Ledger
 from nexus.core.chain import ChainManager
-from nexus.core.verifier import IntentVerifier
 from nexus.core.output_validator import OutputValidator
 from nexus.core.cot_logger import CoTLogger
 from nexus.knowledge.context import ContextBuilder
@@ -41,6 +37,9 @@ from nexus.reasoning.continue_complete import ContinueCompleteGate
 from nexus.reasoning.escalate import EscalateGate
 
 logger = logging.getLogger(__name__)
+
+# Per-request callbacks override instance callbacks — async-safe via ContextVar
+_request_callbacks: contextvars.ContextVar = contextvars.ContextVar("_nexus_callbacks", default=None)
 
 
 class NexusEngine:
@@ -251,7 +250,7 @@ class NexusEngine:
                 # ── d. ACTIVATE PERSONA (officially starts TTL clock) ────────
                 activated_persona = self.persona_manager.activate(step_persona_name, tenant_id)
                 activation_done = True
-                activation_time = self.persona_manager.get_activation_time(step_persona_name)
+                activation_time = self.persona_manager.get_activation_time(step_persona_name) or datetime.utcnow()
 
                 self.cot_logger.log(cot_key, f"Persona '{step_persona_name}' activated")
 
@@ -260,6 +259,7 @@ class NexusEngine:
                     persona=activated_persona,
                     intent=intent,
                     activation_time=activation_time,
+                    tenant_id=tenant_id,
                 )
 
                 await self._fire_callbacks("anomaly_checked", {
@@ -313,6 +313,7 @@ class NexusEngine:
                     raise AnomalyDetected(
                         f"Action blocked at step {step_index}: {block_reason}",
                         gate_results=anomaly_result.gates,
+                        chain_id=str(chain.id),
                     )
 
                 # ── h+i. VERIFY + EXECUTE (executor handles both) ─────────────
@@ -343,6 +344,7 @@ class NexusEngine:
                 # ── l2. STORE FINGERPRINT (Gate 4 drift baseline) ─────────────
                 if (
                     self.anomaly_engine.fingerprint_store is not None
+                    and not isinstance(self.anomaly_engine.fingerprint_store, dict)
                     and status == ActionStatus.EXECUTED
                 ):
                     try:
@@ -595,7 +597,7 @@ class NexusEngine:
 
         # Last resort: minimal synthetic persona (should not happen in production)
         from nexus.types import PersonaContract, RiskLevel
-        logger.error(f"[Engine] No personas loaded — using synthetic fallback")
+        logger.error("[Engine] No personas loaded — using synthetic fallback")
         return PersonaContract(
             name=persona_name,
             description="Synthetic fallback persona",

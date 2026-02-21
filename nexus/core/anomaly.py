@@ -45,6 +45,7 @@ class AnomalyEngine:
         persona: PersonaContract,
         intent: IntentDeclaration,
         activation_time: datetime,
+        tenant_id: str = "",
     ) -> AnomalyResult:
         """Run all 4 gates. Returns AnomalyResult.
 
@@ -56,14 +57,23 @@ class AnomalyEngine:
             persona: Active persona contract
             intent: Declared intent for the action
             activation_time: When the persona was activated (for TTL check)
+            tenant_id: Tenant scope (used for async FingerprintCache lookups)
 
         Returns:
             AnomalyResult with all 4 gate results and overall verdict
         """
+        # Pre-fetch Gate 4 fingerprint history. FingerprintCache is async/Redis-backed;
+        # _gate4_drift is synchronous so we resolve the history here before calling it.
+        if self.fingerprint_store is not None and hasattr(self.fingerprint_store, "get_baseline"):
+            baseline = await self.fingerprint_store.get_baseline(tenant_id, str(persona.id))
+            drift_history: Optional[list] = baseline["fingerprints"]
+        else:
+            drift_history = None  # _gate4_drift will fall back to dict lookup
+
         gate1 = self._gate1_scope(persona, intent)
         gate2 = await self._gate2_intent(persona, intent)
         gate3 = self._gate3_ttl(persona, activation_time)
-        gate4 = self._gate4_drift(persona, intent)
+        gate4 = self._gate4_drift(persona, intent, drift_history)
 
         gates = [gate1, gate2, gate3, gate4]
         overall = GateVerdict.PASS
@@ -192,7 +202,12 @@ class AnomalyEngine:
             details=f"{remaining:.1f}s remaining of {persona.max_ttl_seconds}s TTL",
         )
 
-    def _gate4_drift(self, persona: PersonaContract, intent: IntentDeclaration) -> GateResult:
+    def _gate4_drift(
+        self,
+        persona: PersonaContract,
+        intent: IntentDeclaration,
+        history: Optional[list] = None,
+    ) -> GateResult:
         """BEHAVIORAL DRIFT: Is this action's fingerprint within N sigma of
         the persona's historical baseline?
 
@@ -200,12 +215,19 @@ class AnomalyEngine:
         Score: how many sigma from mean. Lower is better.
         Threshold: config.gate_drift_sigma (default 2.5).
         If <10 historical samples, SKIP (insufficient baseline).
+
+        Args:
+            persona: Active persona contract
+            intent: Declared intent for the action
+            history: Pre-fetched fingerprint history. When None, falls back to
+                     dict-based fingerprint_store (used in tests / cold start).
         """
         import statistics
 
         fingerprint = self.compute_fingerprint(intent.tool_name, intent.resource_targets)
-        history_key = f"{persona.id}:fingerprints"
-        history: list = self.fingerprint_store.get(history_key, [])
+        if history is None:
+            history_key = f"{persona.id}:fingerprints"
+            history = self.fingerprint_store.get(history_key, []) if isinstance(self.fingerprint_store, dict) else []
 
         if len(history) < 10:
             return GateResult(

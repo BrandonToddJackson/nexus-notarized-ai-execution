@@ -1,5 +1,7 @@
 """Async SQLAlchemy engine and session factory."""
 
+from collections.abc import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from nexus.config import config
 
@@ -7,7 +9,7 @@ engine = create_async_engine(config.database_url, echo=config.debug)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def get_session() -> AsyncSession:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Dependency injection for FastAPI routes."""
     async with async_session() as session:
         yield session

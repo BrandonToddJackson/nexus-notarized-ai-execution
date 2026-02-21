@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from nexus.api.schemas import TokenRequest, TokenResponse
 from nexus.auth.jwt import JWTManager
@@ -18,7 +19,7 @@ async def create_token(request: Request, body: TokenRequest):
     key_hash = hashlib.sha256(body.api_key.encode()).hexdigest()
 
     # Look up tenant via repository (falls back to in-memory check when DB not available)
-    tenant = None
+    tenant: Any = None
     async_session = getattr(request.app.state, "async_session", None)
     if async_session is not None:
         try:

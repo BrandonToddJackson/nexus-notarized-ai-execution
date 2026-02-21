@@ -8,12 +8,11 @@ Extracts tenant_id and sets request.state.tenant_id.
 """
 
 import hashlib
-from fastapi import Request, HTTPException
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from nexus.auth.jwt import JWTManager
-from nexus.config import config
 
 
 class AuthMiddleware(BaseHTTPMiddleware):

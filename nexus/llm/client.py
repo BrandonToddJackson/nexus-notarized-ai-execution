@@ -5,7 +5,6 @@ This wrapper adds: error normalization, usage extraction, NEXUS-specific default
 """
 
 import asyncio
-from typing import Any, Optional
 
 import litellm
 from nexus.config import config

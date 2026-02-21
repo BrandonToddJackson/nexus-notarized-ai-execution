@@ -10,7 +10,7 @@ Implementation notes:
 
 import hashlib
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from nexus.types import (
     Seal, IntentDeclaration, AnomalyResult, ActionStatus,

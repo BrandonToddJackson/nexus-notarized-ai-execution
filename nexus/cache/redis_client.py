@@ -36,7 +36,7 @@ class RedisClient:
 
     async def incr(self, tenant_id: str, key: str) -> int:
         """Increment a counter."""
-        return await self.client.incr(self._key(tenant_id, key))
+        return int(await self.client.incr(self._key(tenant_id, key)))
 
     async def health(self) -> bool:
         """Check Redis connectivity."""

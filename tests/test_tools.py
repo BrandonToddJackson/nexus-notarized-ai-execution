@@ -6,7 +6,7 @@ Phase 3: Execution Layer — real assertions against live implementations.
 import asyncio
 import pytest
 
-from nexus.types import ToolDefinition, RiskLevel, PersonaContract
+from nexus.types import ToolDefinition, RiskLevel
 from nexus.exceptions import ToolError
 from nexus.tools.registry import ToolRegistry
 from nexus.tools.sandbox import Sandbox

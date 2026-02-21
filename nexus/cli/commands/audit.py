@@ -46,7 +46,7 @@ async def _audit(tenant_id: str, limit: int, export_path: str | None, fmt: str) 
                 "fingerprint": m.fingerprint,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
                 "completed_at": m.completed_at.isoformat() if m.completed_at else None,
-                "anomaly_verdict": (m.anomaly_result or {}).get("overall_verdict"),
+                "anomaly_verdict": dict(m.anomaly_result).get("overall_verdict") if m.anomaly_result else None,
                 "error": m.error,
             })
 
@@ -96,9 +96,10 @@ async def _audit(tenant_id: str, limit: int, export_path: str | None, fmt: str) 
     verdict_icon = {"pass": "[green]✓[/green]", "fail": "[red]✗[/red]"}
 
     for i, m in enumerate(seal_models, 1):
-        st = m.status or "pending"
+        st: str = str(m.status) if m.status else "pending"
         color = status_color.get(st, "white")
-        verdict = (m.anomaly_result or {}).get("overall_verdict", "")
+        m_anomaly: dict = dict(m.anomaly_result) if m.anomaly_result else {}
+        verdict: str = str(m_anomaly.get("overall_verdict", ""))
         icon = verdict_icon.get(verdict.lower(), f"[dim]{verdict}[/dim]")
         ts = m.created_at.strftime("%Y-%m-%d %H:%M:%S") if m.created_at else ""
 

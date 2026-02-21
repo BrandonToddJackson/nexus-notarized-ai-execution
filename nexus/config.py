@@ -1,5 +1,6 @@
 """Application configuration. All env vars defined here with defaults."""
 
+import warnings
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -58,7 +59,6 @@ class NexusConfig(BaseSettings):
 
 config = NexusConfig()
 
-import warnings
 if config.secret_key == "change-me-in-production":
     warnings.warn("NEXUS_SECRET_KEY is insecure default — set a strong value in .env", stacklevel=1)
 elif len(config.secret_key.encode()) < 32:

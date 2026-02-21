@@ -5,7 +5,7 @@ Collections are named '{tenant_id}_{namespace}' for tenant isolation.
 """
 
 import asyncio
-from typing import Optional, Callable
+from typing import Callable
 
 from nexus.types import KnowledgeDocument, RetrievedContext
 

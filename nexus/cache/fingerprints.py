@@ -1,8 +1,6 @@
 """Stores behavioral fingerprints for Gate 4 drift detection."""
 
-import json
 import re
-from typing import Optional
 
 from nexus.cache.redis_client import RedisClient
 

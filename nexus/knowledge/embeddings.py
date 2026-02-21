@@ -3,7 +3,6 @@
 Uses sentence-transformers for local embeddings. No API key needed.
 """
 
-from typing import Optional
 import numpy as np
 
 
@@ -39,6 +38,7 @@ class EmbeddingService:
             List of embedding vectors (each is list[float])
         """
         self._ensure_model()
+        assert self._model is not None
         return self._model.encode(texts).tolist()
 
     def similarity(self, text_a: str, text_b: str) -> float:

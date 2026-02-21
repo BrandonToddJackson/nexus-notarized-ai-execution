@@ -1,6 +1,5 @@
 """Built-in data tools: statistics, knowledge search."""
 
-from typing import Any
 
 from nexus.tools.plugin import tool
 from nexus.types import RiskLevel

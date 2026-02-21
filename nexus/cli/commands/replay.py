@@ -38,10 +38,6 @@ def _gate_row(gate) -> tuple:
 async def _replay(chain_id: str, delay: float) -> None:
     from nexus.db.database import init_db, async_session
     from nexus.db.repository import Repository
-    from nexus.types import (
-        Seal, IntentDeclaration, AnomalyResult, GateResult,
-        ActionStatus, GateVerdict, RiskLevel,
-    )
 
     await init_db()
 
@@ -68,11 +64,11 @@ async def _replay(chain_id: str, delay: float) -> None:
         console.print()
         console.print(Rule(f"[bold]Step {i + 1} / {total}[/bold]", style="dim"))
 
-        status = m.status or "pending"
+        status: str = str(m.status) if m.status else "pending"
         status_color = {"executed": "green", "blocked": "red", "pending": "yellow"}.get(status, "white")
 
         # Intent declaration
-        intent = m.intent or {}
+        intent: dict = dict(m.intent) if m.intent else {}
         console.print(f"[bold]Tool:[/bold]    [cyan]{m.tool_name}[/cyan]")
         console.print(f"[bold]Persona:[/bold] [magenta]{m.persona_id}[/magenta]")
         if intent.get("planned_action"):
@@ -83,7 +79,7 @@ async def _replay(chain_id: str, delay: float) -> None:
         console.print()
 
         # Gate results table
-        anomaly = m.anomaly_result or {}
+        anomaly: dict = dict(m.anomaly_result) if m.anomaly_result else {}
         gates = anomaly.get("gates", [])
         if gates:
             gate_table = Table(box=box.SIMPLE, show_header=True, header_style="bold dim", padding=(0, 1))
@@ -109,7 +105,7 @@ async def _replay(chain_id: str, delay: float) -> None:
         console.print(f"[bold]Status:[/bold]  [{status_color}]{status.upper()}[/{status_color}]")
 
         # CoT trace
-        cot_trace = m.cot_trace or []
+        cot_trace: list = list(m.cot_trace) if m.cot_trace else []
         if cot_trace:
             console.print()
             console.print("[bold dim]Chain-of-Thought:[/bold dim]")

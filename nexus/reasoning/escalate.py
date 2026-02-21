@@ -1,7 +1,6 @@
 """Decision gate: Can the agent retry/fallback, or must it escalate to a human?"""
 
 from datetime import datetime, timezone
-from typing import Any
 
 from nexus.types import ChainPlan, ReasoningDecision
 from nexus.exceptions import ToolError

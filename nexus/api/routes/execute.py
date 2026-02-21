@@ -47,18 +47,17 @@ async def execute_task(request: Request, body: ExecuteRequest):
     tenant_id = getattr(request.state, "tenant_id", "demo")
 
     chain = None
+    blocked_chain_id: str | None = None
     try:
         chain = await engine.run(
             task=body.task,
             tenant_id=tenant_id,
             persona_name=body.persona,
         )
-    except AnomalyDetected:
+    except AnomalyDetected as exc:
         # Chain was blocked — engine already sealed the blocked action and failed the chain.
-        # Fall through: chain is None only if decomposition itself failed before chain creation,
-        # but AnomalyDetected is always raised after chain creation, so chain exists in ledger.
-        # We surface the blocked result as a normal 200 ExecuteResponse with status=blocked.
-        pass
+        # engine.run() re-raises before returning chain, so we retrieve seals via chain_id.
+        blocked_chain_id = exc.chain_id
     except (ChainAborted, EscalationRequired) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
@@ -70,11 +69,12 @@ async def execute_task(request: Request, body: ExecuteRequest):
     # Collect seals from ledger. Works for both completed and blocked chains.
     ledger = request.app.state.ledger
 
-    if chain is None:
-        # No chain was created (decomposition failed before raise) — shouldn't happen
+    if chain is None and not blocked_chain_id:
+        # No chain was created (decomposition failed before chain creation)
         raise HTTPException(status_code=500, detail="Chain not created")
 
-    seals_raw = await ledger.get_chain(chain.id)
+    chain_id_str: str = str(chain.id) if chain else (blocked_chain_id or "")
+    seals_raw = await ledger.get_chain(chain_id_str)
     seal_responses = [_seal_to_response(s) for s in seals_raw]
 
     # Final result = last executed seal's tool_result (None for blocked chains)
@@ -87,9 +87,17 @@ async def execute_task(request: Request, body: ExecuteRequest):
     # Cost summary (zero if no cost tracker wired)
     cost = CostSummary(input_tokens=0, output_tokens=0, total_cost_usd=0.0)
 
+    # Determine final status: completed chain uses chain.status, blocked uses "blocked"
+    if blocked_chain_id:
+        final_status = "blocked"
+    elif chain is not None:
+        final_status = chain.status.value if hasattr(chain.status, "value") else str(chain.status)
+    else:
+        final_status = "unknown"
+
     return ExecuteResponse(
-        chain_id=chain.id,
-        status=chain.status.value if hasattr(chain.status, "value") else chain.status,
+        chain_id=chain_id_str,
+        status=final_status,
         seals=seal_responses,
         result=final_result,
         cost=cost,

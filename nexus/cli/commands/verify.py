@@ -5,6 +5,7 @@ cryptographically verify that an execution audit trail was not tampered with.
 """
 
 import asyncio
+from datetime import datetime
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -17,7 +18,6 @@ console = Console()
 async def _verify(chain_id: str, tenant_id: str) -> None:
     from nexus.db.database import init_db, async_session
     from nexus.db.repository import Repository
-    from nexus.core.ledger import Ledger
     from nexus.core.notary import Notary
 
     await init_db()
@@ -32,35 +32,36 @@ async def _verify(chain_id: str, tenant_id: str) -> None:
 
     # Convert DB models → Seal objects for verification
     from nexus.types import (
-        Seal, IntentDeclaration, AnomalyResult, GateResult,
-        ActionStatus, GateVerdict, RiskLevel,
+        Seal, IntentDeclaration, AnomalyResult, ActionStatus, GateVerdict, RiskLevel,
     )
 
     seals = []
     for m in sorted(seal_models, key=lambda s: s.step_index):
+        m_intent: dict = dict(m.intent) if m.intent else {}
+        m_anomaly: dict = dict(m.anomaly_result) if m.anomaly_result else {}
         seals.append(Seal(
             id=str(m.id),
             chain_id=str(m.chain_id),
-            step_index=m.step_index,
-            tenant_id=m.tenant_id,
-            persona_id=m.persona_id,
-            intent=IntentDeclaration(**(m.intent or {})) if m.intent else IntentDeclaration(
-                task_description="", planned_action="", tool_name=m.tool_name or "",
+            step_index=int(m.step_index),
+            tenant_id=str(m.tenant_id),
+            persona_id=str(m.persona_id),
+            intent=IntentDeclaration(**m_intent) if m_intent else IntentDeclaration(
+                task_description="", planned_action="", tool_name=str(m.tool_name or ""),
                 tool_params={}, resource_targets=[], reasoning="",
             ),
-            anomaly_result=AnomalyResult(**(m.anomaly_result or {})) if m.anomaly_result else AnomalyResult(
+            anomaly_result=AnomalyResult(**m_anomaly) if m_anomaly else AnomalyResult(
                 gates=[], overall_verdict=GateVerdict.PASS, risk_level=RiskLevel.LOW, persona_id="", action_fingerprint="",
             ),
-            tool_name=m.tool_name or "",
-            tool_params=m.tool_params or {},
+            tool_name=str(m.tool_name or ""),
+            tool_params=dict(m.tool_params) if m.tool_params else {},
             tool_result=m.tool_result,
             status=ActionStatus(m.status) if m.status else ActionStatus.PENDING,
-            cot_trace=m.cot_trace or [],
-            fingerprint=m.fingerprint or "",
-            parent_fingerprint=m.parent_fingerprint or "",
-            created_at=m.created_at,
-            completed_at=m.completed_at,
-            error=m.error,
+            cot_trace=list(m.cot_trace) if m.cot_trace else [],
+            fingerprint=str(m.fingerprint or ""),
+            parent_fingerprint=str(m.parent_fingerprint or ""),
+            created_at=m.created_at if isinstance(m.created_at, datetime) else datetime.utcnow(),
+            completed_at=m.completed_at if isinstance(m.completed_at, datetime) else None,
+            error=str(m.error) if m.error else None,
         ))
 
     from nexus.exceptions import SealIntegrityError

@@ -6,6 +6,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from nexus.config import config
+from nexus.version import __version__
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -14,9 +17,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         return response
-
-from nexus.config import config, NexusConfig
-from nexus.version import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +73,12 @@ async def lifespan(app: FastAPI):
                 risk = RiskLevel.MEDIUM
             persona_contracts.append(PersonaContract(
                 id=str(p.id),
-                name=p.name,
-                description=p.description,
-                allowed_tools=p.allowed_tools or [],
-                resource_scopes=p.resource_scopes or [],
-                intent_patterns=p.intent_patterns or [],
-                max_ttl_seconds=p.max_ttl_seconds,
+                name=str(p.name),
+                description=str(p.description),
+                allowed_tools=list(p.allowed_tools or []),
+                resource_scopes=list(p.resource_scopes or []),
+                intent_patterns=list(p.intent_patterns or []),
+                max_ttl_seconds=int(p.max_ttl_seconds),
                 risk_tolerance=risk,
             ))
         persona_manager = PersonaManager(persona_contracts)

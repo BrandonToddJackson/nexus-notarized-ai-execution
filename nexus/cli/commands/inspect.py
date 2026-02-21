@@ -51,7 +51,7 @@ async def _inspect(seal_id: str, tenant_id: str, raw: bool) -> None:
         console.print_json(json.dumps(data, indent=2))
         return
 
-    status = seal_model.status or "pending"
+    status: str = str(seal_model.status) if seal_model.status else "pending"
     status_color = {"executed": "green", "blocked": "red", "pending": "yellow"}.get(status, "white")
 
     # Header
@@ -68,7 +68,7 @@ async def _inspect(seal_id: str, tenant_id: str, raw: bool) -> None:
     ))
 
     # Intent declaration
-    intent = seal_model.intent or {}
+    intent: dict = dict(seal_model.intent) if seal_model.intent else {}
     if intent:
         console.print()
         console.print("[bold]Intent Declaration[/bold]")
@@ -90,7 +90,7 @@ async def _inspect(seal_id: str, tenant_id: str, raw: bool) -> None:
         console.print(intent_table)
 
     # Gate results
-    anomaly = seal_model.anomaly_result or {}
+    anomaly: dict = dict(seal_model.anomaly_result) if seal_model.anomaly_result else {}
     gates = anomaly.get("gates", [])
     if gates:
         console.print()
@@ -120,7 +120,7 @@ async def _inspect(seal_id: str, tenant_id: str, raw: bool) -> None:
                       f"[dim]risk: {anomaly.get('risk_level', 'unknown')}[/dim]")
 
     # Chain-of-thought
-    cot_trace = seal_model.cot_trace or []
+    cot_trace: list = list(seal_model.cot_trace) if seal_model.cot_trace else []
     if cot_trace:
         console.print()
         console.print("[bold]Chain-of-Thought[/bold]")

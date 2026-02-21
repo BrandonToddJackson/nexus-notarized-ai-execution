@@ -220,13 +220,16 @@ class TestNexusEngine:
         with pytest.raises(AnomalyDetected) as exc_info:
             await engine.run("send email to user@example.com", test_tenant_id, persona_name="researcher")
 
-        # The chain should have a BLOCKED seal in the ledger
-        # (engine fails chain after AnomalyDetected)
-        seals = await engine.ledger.get_chain(engine.chain_manager.create_chain(
-            test_tenant_id, "", []  # dummy — we just check the AnomalyDetected was raised
-        ).id)
-        # Verify the exception carries gate results
-        assert exc_info.value.gate_results is not None or True  # gate_results may be empty list
+        # Exception must carry gate results
+        gate_results = exc_info.value.gate_results
+        assert len(gate_results) > 0, "AnomalyDetected must carry at least one GateResult"
+
+        # Gate 1 (scope) must have failed — send_email is not in researcher's allowed_tools
+        scope_results = [g for g in gate_results if g.gate_name == "scope"]
+        assert len(scope_results) == 1, "Expected exactly one scope gate result"
+        assert scope_results[0].verdict.value == "fail", (
+            f"Expected scope gate to FAIL but got {scope_results[0].verdict!r}"
+        )
 
     @pytest.mark.asyncio
     async def test_chain_has_merkle_fingerprints(self, test_tenant_id):

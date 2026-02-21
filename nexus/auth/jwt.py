@@ -2,7 +2,6 @@
 
 import jwt
 from datetime import datetime, timedelta
-from typing import Optional
 
 from nexus.config import config
 from nexus.exceptions import NexusError

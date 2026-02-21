@@ -5,7 +5,7 @@ Uses an in-memory SQLite database (aiosqlite) so no Postgres required.
 
 import hashlib
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 

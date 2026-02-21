@@ -269,7 +269,7 @@ def init_project(
             f.write(content)
         console.print(f"  [dim]created[/dim]  {filename}")
 
-    console.print(f"  [dim]created[/dim]  knowledge/")
+    console.print("  [dim]created[/dim]  knowledge/")
     console.print()
     console.print(f"[bold green]Project '{name}' ready![/bold green]")
     console.print()

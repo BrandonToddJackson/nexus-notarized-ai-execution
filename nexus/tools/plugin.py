@@ -10,12 +10,12 @@ Auto-generates ToolDefinition from function signature + type hints.
 
 import inspect
 import functools
-from typing import Any
+from typing import Any, Callable
 
 from nexus.types import ToolDefinition, RiskLevel
 
 # Global registry for decorated tools — collected at import time
-_registered_tools: dict[str, tuple[ToolDefinition, callable]] = {}
+_registered_tools: dict[str, tuple[ToolDefinition, Callable[..., Any]]] = {}
 
 
 def tool(
@@ -82,6 +82,6 @@ def tool(
     return decorator
 
 
-def get_registered_tools() -> dict[str, tuple[ToolDefinition, callable]]:
+def get_registered_tools() -> dict[str, tuple[ToolDefinition, Callable[..., Any]]]:
     """Return all tools registered via @tool decorator."""
     return _registered_tools.copy()

@@ -11,7 +11,7 @@ console = Console()
 
 async def _seed() -> None:
     from nexus.db.database import init_db, async_session
-    from nexus.db.seed import seed_database, DEFAULT_PERSONAS
+    from nexus.db.seed import seed_database
     from nexus.db.repository import Repository
 
     with console.status("[dim]Connecting to database...[/dim]"):
@@ -34,7 +34,7 @@ async def _seed() -> None:
     # Tenant summary
     if tenant:
         console.print(f"[bold]Tenant:[/bold]  {tenant.name} [dim](id: {tenant.id})[/dim]")
-        console.print(f"[bold]API Key:[/bold] [cyan]nxs_demo_key_12345[/cyan]  [dim](demo)[/dim]")
+        console.print("[bold]API Key:[/bold] [cyan]nxs_demo_key_12345[/cyan]  [dim](demo)[/dim]")
         console.print()
 
     # Persona table

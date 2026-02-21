@@ -4,7 +4,6 @@ In-memory store is always maintained. If a repository (DB) is available,
 seals are also persisted.
 """
 
-from typing import Optional
 
 from nexus.types import Seal
 from nexus.core.notary import Notary

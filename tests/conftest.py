@@ -4,10 +4,8 @@ All tests should use these fixtures for consistency.
 """
 
 import pytest
-import asyncio
-from typing import AsyncGenerator
 
-from nexus.types import PersonaContract, RiskLevel, TrustTier
+from nexus.types import PersonaContract, RiskLevel
 from nexus.config import NexusConfig
 
 

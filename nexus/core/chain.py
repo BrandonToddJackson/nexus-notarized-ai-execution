@@ -5,7 +5,7 @@ The chain tracks which steps have been completed via seal_ids.
 """
 
 from datetime import datetime
-from typing import Optional, Any
+from typing import Optional
 
 from nexus.types import ChainPlan, ChainStatus
 

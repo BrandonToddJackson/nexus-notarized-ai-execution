@@ -10,9 +10,10 @@ class NexusError(Exception):
 
 class AnomalyDetected(NexusError):
     """One or more anomaly gates failed."""
-    def __init__(self, message: str, gate_results: list = None, **kwargs):
+    def __init__(self, message: str, gate_results: list = None, chain_id: str = "", **kwargs):
         super().__init__(message, **kwargs)
         self.gate_results = gate_results or []
+        self.chain_id = chain_id
 
 
 class PersonaViolation(NexusError):

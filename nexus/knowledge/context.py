@@ -5,7 +5,6 @@ and persona constraints into a coherent context for tool selection.
 """
 
 import logging
-from typing import Optional
 
 from nexus.types import PersonaContract, RetrievedContext
 from nexus.knowledge.store import KnowledgeStore

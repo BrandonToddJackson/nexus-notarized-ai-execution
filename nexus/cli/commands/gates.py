@@ -27,7 +27,7 @@ async def _gates_stats(tenant_id: str) -> dict:
         total_seals = len(seals)
 
         for seal_model in seals:
-            anomaly = seal_model.anomaly_result or {}
+            anomaly: dict = dict(seal_model.anomaly_result) if seal_model.anomaly_result else {}
             for gate in anomaly.get("gates", []):
                 name = gate.get("gate_name", "")
                 verdict = gate.get("verdict", "pass").lower()
