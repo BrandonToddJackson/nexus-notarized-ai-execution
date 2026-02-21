@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+.venv*/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Environment
+.env
+!.env.example
+
+# Data
+data/
+*.db
+
+# Docker
+docker-compose.override.yml
+
+# Node
+node_modules/
+frontend/dist/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Internal / AI tooling
+CLAUDE.md
+CLAUDE_CODE_INSTRUCTIONS.md
+nexus_definitive_optimizer_v2.py

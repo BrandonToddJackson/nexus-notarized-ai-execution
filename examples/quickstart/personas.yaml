@@ -1,0 +1,16 @@
+# Quickstart personas — simple defaults
+personas:
+  - name: researcher
+    description: Searches and retrieves information
+    allowed_tools:
+      - knowledge_search
+      - web_search
+    resource_scopes:
+      - "kb:*"
+      - "web:*"
+    intent_patterns:
+      - "search for information"
+      - "find data about"
+      - "look up"
+    max_ttl_seconds: 60
+    risk_tolerance: low
