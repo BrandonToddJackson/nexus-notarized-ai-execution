@@ -17,32 +17,35 @@
 | Phase 3: Execution Layer | ✅ COMPLETE | 14/14 ✓ | registry, selector, sandbox, executor, plugin decorator, builtins, skills — **real assertions** |
 | Phase 4: Engine | ✅ COMPLETE | 7/7 ✓ | engine.py wires Phases 1-3 — **real assertions** |
 | Phase 5: Persistence | ✅ COMPLETE | 26/26 ✓ | repository (all 17 methods), seed (idempotent, 5 personas), smoketest in tests/test_repository.py |
-| Phase 6: LLM | 🔲 TODO | — | cost_tracker (client/prompts stubbed) |
-| Phase 7: Cache | 🔲 TODO | — | fingerprints.py |
-| Phase 8: Auth | ✅ COMPLETE | — | rate_limiter, jwt, middleware — all implemented |
-| Phase 9: API | 🔲 TODO | 4/4 ✓ | route handlers (health/auth implemented; execute/ledger/etc stubs) |
-| Phase 10: CLI | 🔲 TODO | — | init, run, seed commands |
-| Phase 11: Frontend | 🔲 TODO | — | React + Vite |
-| Phase 12: Infrastructure | 🔲 TODO | — | Dockerfile, docker-compose |
-| Phase 13: Tests | ✅ COMPLETE | 112/112 ✓ | Phase 1-5 all real assertions; selector bug fixed (resource_targets) |
+| Phase 6: LLM | ✅ COMPLETE | ✓ | litellm client, prompts.py, cost_tracker — wired to engine per-step |
+| Phase 7: Cache | ✅ COMPLETE | 10/10 ✓ | FingerprintCache (Redis list, max 1000, frequency map); wired to engine for Gate 4 drift baseline |
+| Phase 8: Auth | ✅ COMPLETE | ✓ | rate_limiter, jwt, middleware — all implemented and tested |
+| Phase 9: API | ✅ COMPLETE | ✓ | All route handlers: execute, stream (SSE), ledger, personas, tools, knowledge, health, auth |
+| Phase 10: CLI | ✅ COMPLETE | ✓ | 11 commands: init, run, dev, seed, verify, replay, inspect, audit, gates, config, tools |
+| Phase 11: Frontend | 🔲 TODO | — | React + Vite + Tailwind (10 pages) |
+| Phase 12: Infrastructure | 🔲 TODO | — | Dockerfile, docker-compose full stack |
+| Phase 13: Tests | ✅ COMPLETE | 267/267 ✓ | Phases 1-10 all real assertions; 0 stubs; 0 skips |
 
 **Last verified:** 2026-02-21
-**Test suite:** `.venv312/bin/pytest tests/ -v` → **112/112 passed**
-**Import check:** All 27 Phase 0-3 modules → **27/27 OK**
-**Smoke test:** Phase 1-3 public APIs → **22/22 checks passed**
-**Selector fix:** `resource_targets` now derived from `tool.resource_pattern` (not param values) so Gate 1 scope check passes correctly
+**Test suite:** `.venv312/bin/pytest tests/ -v` → **267/267 passed**
 
-**Phase 8 details:**
-- `rate_limiter.py`: Redis INCR + EXPIRE fixed-window; `action="api"` (60s / `rate_limit_requests_per_minute`), `action="chain"` (3600s / `rate_limit_chains_per_hour`); raises `NexusError("Rate limit exceeded")` when over limit
-- `jwt.py`: `create_token` / `verify_token` — was already correct, no changes needed
-- `middleware.py`: API key path now hashes with SHA-256 and calls `repository.get_tenant_by_api_key_hash()`; returns 401 if tenant not found
-- `repository.py`: added `get_tenant_by_api_key_hash(api_key_hash)` method to support middleware lookup
+**Audit fixes applied (2026-02-21):**
+- `ledger.py`: `Seal(**s.__dict__)` → filter `_sa_instance_state` (SQLAlchemy internal key was crashing DB retrieval)
+- `engine.py`: Gate 4 fingerprints now stored after each EXECUTED seal via `fingerprint_store.store()` — drift detection was permanently disabled before this fix
+- `output_validator.py`: `EMAIL_PATTERN` now used in `validate()` alongside SSN and CC checks
+- `notary.py`: `verify_chain()` defensively sorts seals by step_index before verification
+- `context.py`: bare `except` now logs warning before falling back
+- `stream.py`: SSE task properly awaited on client disconnect (was leaking background tasks)
+- `verifier.py`: resource target mismatches now logged (were silently discarded)
+- `cli/verify.py`: fixed unreachable "CHAIN COMPROMISED" branch — `verify_chain()` raises, never returns False
+- `cli/run.py`: fixed duplicate ToolExecutor instantiation (second instance was passed to NexusEngine, losing registry)
+- `cli/main.py`: `--version` flag now works (needed `is_eager=True` + `invoke_without_command=True`)
+- `api/routes/execute.py`: AnomalyDetected now returns proper ExecuteResponse (not `{"detail":"..."}`)
 
-**Known issues / next steps:**
-- `datetime.utcnow()` deprecation warnings in `personas.py`, `anomaly.py`, `test_anomaly.py` (harmless in 3.12, fix before 3.14)
-- `pyproject.toml` build-backend fixed to `setuptools.build_meta`; package discovery scoped to `nexus*`
-- Phase 6 (LLM / cost_tracker), Phase 7 (cache/fingerprints), Phase 9 (API route handlers) are next
-- Phase 13 tests only cover Phases 1-5; auth tests not yet written
+**Known non-blockers:**
+- `datetime.utcnow()` deprecation warnings (503 in test run) — harmless in 3.12, fix before 3.14
+- Gate 4 drift uses frequency distribution, not time-series — acceptable for v1
+- Sandbox is timeout-only isolation (no filesystem jail) — v2 scope per spec
 
 ---
 

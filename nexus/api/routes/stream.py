@@ -149,7 +149,12 @@ async def stream_execute(request: Request, body: ExecuteRequest):
         except asyncio.TimeoutError:
             yield _sse("error", {"message": "Stream timed out"})
         finally:
-            task.cancel()
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
     return StreamingResponse(
         event_generator(),

@@ -4,8 +4,12 @@ Prevents the LLM from declaring 'I want to read a file' then executing 'rm -rf'.
 This is the anti-gaming layer — the LLM cannot self-declare its way out of constraints.
 """
 
+import logging
+
 from nexus.types import IntentDeclaration
 from nexus.exceptions import PersonaViolation
+
+logger = logging.getLogger(__name__)
 
 
 class IntentVerifier:
@@ -64,6 +68,9 @@ class IntentVerifier:
                 )
                 if not matched and param_values:
                     # Non-fatal: log but don't block — resource targets are advisory
-                    pass
+                    logger.warning(
+                        f"[IntentVerifier] Resource target {target!r} not found in tool params "
+                        f"for tool {tool_name!r} (params: {param_values})"
+                    )
 
         return True

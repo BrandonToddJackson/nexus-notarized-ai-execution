@@ -51,6 +51,8 @@ class OutputValidator:
                 return False, "Output contains potential SSN (PII detected)"
             if self.CC_PATTERN.search(tool_result):
                 return False, "Output contains potential credit card number (PII detected)"
+            if self.EMAIL_PATTERN.search(tool_result):
+                return False, "Output contains potential email address (PII detected)"
 
             # Check 3: Coherence — result shouldn't look like a raw error trace
             error_indicators = [

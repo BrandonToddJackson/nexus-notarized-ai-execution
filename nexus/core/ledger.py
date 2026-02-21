@@ -44,7 +44,7 @@ class Ledger:
         if self._repository is not None:
             db_seals = await self._repository.get_chain_seals(chain_id)
             return sorted(
-                [Seal(**s.__dict__) if not isinstance(s, Seal) else s for s in db_seals],
+                [Seal(**{k: v for k, v in s.__dict__.items() if not k.startswith("_")}) if not isinstance(s, Seal) else s for s in db_seals],
                 key=lambda s: s.step_index,
             )
         return sorted(
@@ -65,7 +65,7 @@ class Ledger:
         """
         if self._repository is not None:
             db_seals = await self._repository.list_seals(tenant_id, limit=limit, offset=offset)
-            return [Seal(**s.__dict__) if not isinstance(s, Seal) else s for s in db_seals]
+            return [Seal(**{k: v for k, v in s.__dict__.items() if not k.startswith("_")}) if not isinstance(s, Seal) else s for s in db_seals]
         tenant_seals = [s for s in self._memory_store if s.tenant_id == tenant_id]
         return tenant_seals[offset: offset + limit]
 

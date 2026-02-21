@@ -4,10 +4,13 @@ This is what makes the agent useful — it combines RAG results, session history
 and persona constraints into a coherent context for tool selection.
 """
 
+import logging
 from typing import Optional
 
 from nexus.types import PersonaContract, RetrievedContext
 from nexus.knowledge.store import KnowledgeStore
+
+logger = logging.getLogger(__name__)
 
 
 class ContextBuilder:
@@ -55,7 +58,8 @@ class ContextBuilder:
         if has_wildcard:
             try:
                 namespaces = self.knowledge_store.list_namespaces(tenant_id)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"[ContextBuilder] Failed to list namespaces for tenant {tenant_id}: {e}")
                 namespaces = []
         else:
             for scope in kb_scopes:

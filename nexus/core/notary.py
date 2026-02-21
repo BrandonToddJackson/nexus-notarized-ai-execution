@@ -107,6 +107,7 @@ class Notary:
         """
         if not seals:
             return True
+        seals = sorted(seals, key=lambda s: s.step_index)
         prev_fingerprint = ""
         for seal in seals:
             content = self._seal_content_string(seal)

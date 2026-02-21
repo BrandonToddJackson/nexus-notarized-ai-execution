@@ -158,10 +158,24 @@ examples/           # Working examples
 ## CLI
 
 ```bash
-nexus init my-project     # Scaffold new project
-nexus dev                 # Start dev server with hot reload
-nexus run "Analyze Q3"    # Execute task, print seal summary
-nexus seed                # Seed database with defaults
+# Project setup
+nexus init my-project     # Scaffold project dir with .env, personas.yaml, docker-compose.yml
+nexus dev                 # Start API + hot reload
+nexus seed                # Seed database with 5 default personas
+
+# Execution
+nexus run "Analyze Q3"    # Execute task, print seal summary with gate results
+
+# Audit (NEXUS differentiators — no other framework has these)
+nexus verify <chain-id>   # Verify Merkle chain integrity — detect any tampering
+nexus replay <chain-id>   # Step-by-step chain replay with gate details
+nexus inspect <seal-id>   # Full seal dump: intent, gates, CoT trace, fingerprints
+nexus audit               # Paginated ledger export (table or JSON)
+nexus gates               # Show gate thresholds + per-gate pass/fail stats
+
+# Introspection
+nexus config              # Show resolved config with env var names (secrets masked)
+nexus tools               # List all registered tools with risk levels
 ```
 
 ## API

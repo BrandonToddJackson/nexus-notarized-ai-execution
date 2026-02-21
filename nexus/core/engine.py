@@ -324,6 +324,18 @@ class NexusEngine:
                 # ── l. APPEND TO LEDGER ────────────────────────────────────────
                 await self.ledger.append(seal)
 
+                # ── l2. STORE FINGERPRINT (Gate 4 drift baseline) ─────────────
+                if (
+                    self.anomaly_engine.fingerprint_store is not None
+                    and status == ActionStatus.EXECUTED
+                ):
+                    try:
+                        await self.anomaly_engine.fingerprint_store.store(
+                            tenant_id, step_persona_name, anomaly_result.action_fingerprint
+                        )
+                    except Exception as fp_exc:
+                        logger.warning(f"[Engine] Fingerprint storage failed: {fp_exc}")
+
                 # ── m. RECORD COST (if available) ──────────────────────────────
                 if self.cost_tracker is not None:
                     try:

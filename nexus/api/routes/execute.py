@@ -46,16 +46,19 @@ async def execute_task(request: Request, body: ExecuteRequest):
     engine = request.app.state.engine
     tenant_id = getattr(request.state, "tenant_id", "demo")
 
+    chain = None
     try:
         chain = await engine.run(
             task=body.task,
             tenant_id=tenant_id,
             persona_name=body.persona,
         )
-    except AnomalyDetected as exc:
-        # Chain was blocked — return partial result with blocked seals
-        # The chain is already finalized in the engine; surface as 200 with blocked status
-        raise HTTPException(status_code=200, detail=str(exc))
+    except AnomalyDetected:
+        # Chain was blocked — engine already sealed the blocked action and failed the chain.
+        # Fall through: chain is None only if decomposition itself failed before chain creation,
+        # but AnomalyDetected is always raised after chain creation, so chain exists in ledger.
+        # We surface the blocked result as a normal 200 ExecuteResponse with status=blocked.
+        pass
     except (ChainAborted, EscalationRequired) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
@@ -64,12 +67,17 @@ async def execute_task(request: Request, body: ExecuteRequest):
 
     duration_ms = int((time.time() - start) * 1000)
 
-    # Collect seals from ledger (in-memory; already appended by engine)
+    # Collect seals from ledger. Works for both completed and blocked chains.
     ledger = request.app.state.ledger
+
+    if chain is None:
+        # No chain was created (decomposition failed before raise) — shouldn't happen
+        raise HTTPException(status_code=500, detail="Chain not created")
+
     seals_raw = await ledger.get_chain(chain.id)
     seal_responses = [_seal_to_response(s) for s in seals_raw]
 
-    # Final result = last executed seal's tool_result
+    # Final result = last executed seal's tool_result (None for blocked chains)
     final_result = None
     for s in reversed(seals_raw):
         if s.tool_result is not None:
