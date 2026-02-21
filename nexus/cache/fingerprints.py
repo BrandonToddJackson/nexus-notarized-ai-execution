@@ -24,8 +24,9 @@ class FingerprintCache:
             persona_id: Persona this fingerprint belongs to
             fingerprint: The behavioral fingerprint hash
         """
-        # TODO: Implement — append to Redis list, trim to 1000
-        raise NotImplementedError("Phase 7: Implement fingerprint storage")
+        key = self.redis._key(tenant_id, f"fingerprints:{persona_id}")
+        await self.redis.client.rpush(key, fingerprint)
+        await self.redis.client.ltrim(key, -1000, -1)
 
     async def get_baseline(self, tenant_id: str, persona_id: str) -> dict:
         """Return baseline statistics for drift comparison.
@@ -37,5 +38,16 @@ class FingerprintCache:
                 "frequency_map": dict[str, int]  # fingerprint -> count
             }
         """
-        # TODO: Implement
-        raise NotImplementedError("Phase 7: Implement baseline retrieval")
+        key = self.redis._key(tenant_id, f"fingerprints:{persona_id}")
+        raw = await self.redis.client.lrange(key, 0, -1)
+        fingerprints = [item.decode() if isinstance(item, bytes) else item for item in raw]
+
+        frequency_map: dict[str, int] = {}
+        for fp in fingerprints:
+            frequency_map[fp] = frequency_map.get(fp, 0) + 1
+
+        return {
+            "fingerprints": fingerprints,
+            "sample_count": len(fingerprints),
+            "frequency_map": frequency_map,
+        }

@@ -36,6 +36,13 @@ class Repository:
         await self.session.refresh(tenant)
         return tenant
 
+    async def get_tenant_by_api_key_hash(self, api_key_hash: str) -> Optional[TenantModel]:
+        """Get tenant by API key hash."""
+        result = await self.session.execute(
+            select(TenantModel).where(TenantModel.api_key_hash == api_key_hash)
+        )
+        return result.scalar_one_or_none()
+
     # ── Personas ──
     async def list_personas(self, tenant_id: str) -> list[PersonaModel]:
         """List all personas for a tenant."""

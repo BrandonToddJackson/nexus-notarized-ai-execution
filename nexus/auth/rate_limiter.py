@@ -28,6 +28,20 @@ class RateLimiter:
         Raises:
             NexusError: If rate limit exceeded
         """
-        # TODO: Implement — increment Redis counter with TTL,
-        # check against config limits
-        raise NotImplementedError("Phase 8: Implement rate limiting")
+        if action == "api":
+            key = f"rate:api:{tenant_id}"
+            ttl = 60
+            limit = config.rate_limit_requests_per_minute
+        else:
+            key = f"rate:chain:{tenant_id}"
+            ttl = 3600
+            limit = config.rate_limit_chains_per_hour
+
+        count = await self.redis.client.incr(key)
+        if count == 1:
+            await self.redis.client.expire(key, ttl)
+
+        if count > limit:
+            raise NexusError("Rate limit exceeded")
+
+        return True

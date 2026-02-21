@@ -9,6 +9,7 @@ Extracts tenant_id and sets request.state.tenant_id.
 
 import hashlib
 from fastapi import Request, HTTPException
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from nexus.auth.jwt import JWTManager
@@ -44,12 +45,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.url.path in self.PUBLIC_PATHS:
             return await call_next(request)
 
-        # TODO: Implement auth check
-        # For now, pass through (implement after API routes are built)
         auth_header = request.headers.get("Authorization", "")
 
         if not auth_header:
-            raise HTTPException(status_code=401, detail="Missing Authorization header")
+            return JSONResponse({"detail": "Missing Authorization header"}, status_code=401)
 
         try:
             if auth_header.startswith("Bearer "):
@@ -60,14 +59,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
             elif auth_header.startswith("nxs_"):
                 # API key auth — hash and look up
                 key_hash = hashlib.sha256(auth_header.encode()).hexdigest()
-                # TODO: Look up tenant by key_hash in repository
-                request.state.tenant_id = "demo"  # placeholder
+                tenant = None
+                if self.repository is not None:
+                    tenant = await self.repository.get_tenant_by_api_key_hash(key_hash)
+                else:
+                    # Per-request DB lookup via app.state.async_session
+                    async_session = getattr(request.app.state, "async_session", None)
+                    if async_session is None:
+                        return JSONResponse({"detail": "Repository not configured"}, status_code=401)
+                    from nexus.db.repository import Repository
+                    async with async_session() as session:
+                        repo = Repository(session)
+                        tenant = await repo.get_tenant_by_api_key_hash(key_hash)
+                if tenant is None:
+                    return JSONResponse({"detail": "Invalid API key"}, status_code=401)
+                request.state.tenant_id = str(tenant.id)
                 request.state.role = "user"
             else:
-                raise HTTPException(status_code=401, detail="Invalid auth format")
-        except HTTPException:
-            raise
+                return JSONResponse({"detail": "Invalid auth format"}, status_code=401)
         except Exception as e:
-            raise HTTPException(status_code=401, detail=str(e))
+            return JSONResponse({"detail": str(e)}, status_code=401)
 
         return await call_next(request)

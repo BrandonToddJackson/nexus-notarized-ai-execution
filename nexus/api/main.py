@@ -1,29 +1,155 @@
 """FastAPI application factory with lifespan management."""
 
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from nexus.config import config
+from nexus.config import config, NexusConfig
 from nexus.version import __version__
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
     # ── Startup ──
-    # TODO: Initialize:
-    # - Database (init_db)
-    # - Redis connection
-    # - Load personas
-    # - Register tools
-    # - Create engine instance
-    # Store on app.state for route access
-    print(f"NEXUS v{__version__} starting...")
+    logger.info(f"NEXUS v{__version__} starting...")
+
+    # 1. Database
+    from nexus.db.database import init_db, async_session
+    await init_db()
+
+    # 2. Redis
+    from nexus.cache.redis_client import RedisClient
+    redis_client = RedisClient()
+    app.state.redis = redis_client
+
+    # 3. Session factory (for per-request repositories)
+    app.state.async_session = async_session
+
+    # 4. Seed DB (idempotent) and build a one-time repository for startup use
+    async with async_session() as session:
+        from nexus.db.repository import Repository
+        repo = Repository(session)
+
+        # Ensure the demo tenant exists
+        from nexus.db.seed import seed_database
+        await seed_database(session)
+
+        # 5. Embedding service
+        from nexus.knowledge.embeddings import EmbeddingService
+        embedding_service = EmbeddingService(model_name=config.embedding_model)
+        app.state.embedding_service = embedding_service
+
+        # 6. Knowledge store
+        from nexus.knowledge.store import KnowledgeStore
+        knowledge_store = KnowledgeStore(
+            persist_dir=config.chroma_persist_dir,
+            embedding_fn=embedding_service.embed,
+        )
+        app.state.knowledge_store = knowledge_store
+
+        # 7. Load personas from DB → PersonaManager
+        from nexus.core.personas import PersonaManager
+        from nexus.types import PersonaContract, RiskLevel
+        db_personas = await repo.list_personas("demo")
+        persona_contracts = []
+        for p in db_personas:
+            try:
+                risk = RiskLevel(p.risk_tolerance)
+            except ValueError:
+                risk = RiskLevel.MEDIUM
+            persona_contracts.append(PersonaContract(
+                id=str(p.id),
+                name=p.name,
+                description=p.description,
+                allowed_tools=p.allowed_tools or [],
+                resource_scopes=p.resource_scopes or [],
+                intent_patterns=p.intent_patterns or [],
+                max_ttl_seconds=p.max_ttl_seconds,
+                risk_tolerance=risk,
+            ))
+        persona_manager = PersonaManager(persona_contracts)
+        app.state.persona_manager = persona_manager
+
+    # 8. Tool registry — register all built-in tools
+    from nexus.tools.registry import ToolRegistry
+    from nexus.tools.plugin import get_registered_tools
+    import nexus.tools.builtin  # noqa: F401 — triggers @tool registrations
+    tool_registry = ToolRegistry()
+    for tool_name, (definition, impl) in get_registered_tools().items():
+        tool_registry.register(definition, impl)
+    app.state.tool_registry = tool_registry
+
+    # 9. Build all remaining components
+    from nexus.core.anomaly import AnomalyEngine
+    from nexus.core.notary import Notary
+    from nexus.core.ledger import Ledger
+    from nexus.core.chain import ChainManager
+    from nexus.core.verifier import IntentVerifier
+    from nexus.core.output_validator import OutputValidator
+    from nexus.core.cot_logger import CoTLogger
+    from nexus.knowledge.context import ContextBuilder
+    from nexus.tools.selector import ToolSelector
+    from nexus.tools.sandbox import Sandbox
+    from nexus.tools.executor import ToolExecutor
+    from nexus.reasoning.think_act import ThinkActGate
+    from nexus.reasoning.continue_complete import ContinueCompleteGate
+    from nexus.reasoning.escalate import EscalateGate
+    from nexus.cache.fingerprints import FingerprintCache
+
+    fingerprint_store = FingerprintCache(redis_client)
+    anomaly_engine = AnomalyEngine(
+        config=config,
+        embedding_service=embedding_service,
+        fingerprint_store=fingerprint_store,
+    )
+    notary = Notary()
+    ledger = Ledger()  # in-memory; DB persistence via repository in routes
+    app.state.ledger = ledger
+
+    chain_manager = ChainManager()
+    verifier = IntentVerifier()
+    output_validator = OutputValidator()
+    cot_logger = CoTLogger()
+    context_builder = ContextBuilder(knowledge_store=knowledge_store)
+    tool_selector = ToolSelector(registry=tool_registry)
+    sandbox = Sandbox()
+    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier)
+    think_act_gate = ThinkActGate()
+    continue_complete_gate = ContinueCompleteGate()
+    escalate_gate = EscalateGate()
+
+    # 10. NexusEngine
+    from nexus.core.engine import NexusEngine
+    engine = NexusEngine(
+        persona_manager=persona_manager,
+        anomaly_engine=anomaly_engine,
+        notary=notary,
+        ledger=ledger,
+        chain_manager=chain_manager,
+        context_builder=context_builder,
+        tool_registry=tool_registry,
+        tool_selector=tool_selector,
+        tool_executor=tool_executor,
+        output_validator=output_validator,
+        cot_logger=cot_logger,
+        think_act_gate=think_act_gate,
+        continue_complete_gate=continue_complete_gate,
+        escalate_gate=escalate_gate,
+        config=config,
+    )
+    app.state.engine = engine
+
+    logger.info(f"NEXUS v{__version__} ready — {len(tool_registry.list_tools())} tools registered")
+
     yield
+
     # ── Shutdown ──
-    # TODO: Close connections
-    print("NEXUS shutting down...")
+    logger.info("NEXUS shutting down...")
+    await redis_client.close()
 
 
 def create_app() -> FastAPI:
@@ -44,10 +170,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # TODO: Add auth middleware
-    # TODO: Mount route modules under /v1/ prefix
+    # Auth middleware (needs repository — injected per-request via app.state)
+    from nexus.auth.middleware import AuthMiddleware
+    from nexus.auth.jwt import JWTManager
+    app.add_middleware(AuthMiddleware, jwt_manager=JWTManager())
 
-    # Import and include route modules
+    # Routes
     from nexus.api.routes import execute, stream, ledger, personas, tools, knowledge, health, auth
     app.include_router(execute.router, prefix="/v1")
     app.include_router(stream.router, prefix="/v1")
