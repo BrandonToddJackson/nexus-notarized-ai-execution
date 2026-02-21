@@ -4,8 +4,18 @@
 
 Every AI action is declared, verified, and sealed in an immutable ledger before execution. If it looks wrong, it's blocked.
 
-```
-User Task → Decompose → [Declare Intent → Activate Persona → 4 Anomaly Gates → Seal → Execute → Validate] → Audit Trail
+```mermaid
+flowchart LR
+    T([User Task]) --> D[Decompose]
+    D --> R[Retrieve Context]
+    R --> I[Declare Intent]
+    I --> P[Activate Persona]
+    P --> G{4 Anomaly Gates}
+    G -- fail --> B([Blocked & Sealed])
+    G -- pass --> S[Notarize Seal]
+    S --> E[Execute Tool]
+    E --> V[Validate Output]
+    V --> L[(Immutable Ledger)]
 ```
 
 ## What Makes NEXUS Different
@@ -29,18 +39,17 @@ User Task → Decompose → [Declare Intent → Activate Persona → 4 Anomaly G
 
 Every action passes through 4 gates before execution:
 
-```
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│   GATE 1     │    │   GATE 2     │    │   GATE 3     │    │   GATE 4     │
-│   SCOPE      │───→│   INTENT     │───→│   TTL        │───→│   DRIFT      │
-│              │    │              │    │              │    │              │
-│ Is this tool │    │ Does intent  │    │ Has persona  │    │ Is this      │
-│ allowed for  │    │ match the    │    │ been active  │    │ action       │
-│ this persona?│    │ persona's    │    │ too long?    │    │ consistent   │
-│              │    │ patterns?    │    │              │    │ with history?│
-└──────┬───────┘    └──────┬───────┘    └──────┬───────┘    └──────┬───────┘
-       │                   │                   │                   │
-    PASS/FAIL           PASS/FAIL           PASS/FAIL           PASS/FAIL
+```mermaid
+flowchart LR
+    A([Action]) --> G1{"Gate 1<br/>Scope<br/>Tool allowed?"}
+    G1 -- fail --> B1([Blocked])
+    G1 -- pass --> G2{"Gate 2<br/>Intent<br/>Cosine ≥ 0.75"}
+    G2 -- fail --> B2([Blocked])
+    G2 -- pass --> G3{"Gate 3<br/>TTL<br/>Not expired?"}
+    G3 -- fail --> B3([Blocked])
+    G3 -- pass --> G4{"Gate 4<br/>Drift<br/>Within 2.5σ?"}
+    G4 -- fail --> B4([Blocked])
+    G4 -- pass --> OK([Execute])
 ```
 
 If **any** gate fails → action is **BLOCKED** and sealed as blocked in the ledger.
@@ -91,32 +100,37 @@ The dashboard streams gate results, seal cards, and CoT traces in real time as t
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      NEXUS ENGINE                                │
-│                                                                  │
-│  ┌──────────────────────┐    ┌──────────────────────────────┐   │
-│  │   COGNITIVE PLANE     │    │     SECURITY PLANE            │   │
-│  │                       │    │                               │   │
-│  │  Knowledge Store      │    │  Persona Manager              │   │
-│  │  Embedding Service    │    │  Anomaly Engine (4 gates)     │   │
-│  │  Context Builder      │    │  Notary (Merkle seals)        │   │
-│  │  Think/Act Gate       │    │  Ledger (immutable audit)     │   │
-│  │  Continue/Complete    │    │  Intent Verifier              │   │
-│  │  Escalate Gate        │    │  Output Validator             │   │
-│  │                       │    │  CoT Logger                   │   │
-│  └───────────┬───────────┘    └───────────────┬───────────────┘   │
-│              │                                │                   │
-│              └────────────┬───────────────────┘                   │
-│                           │                                       │
-│                    ┌──────┴──────┐                                │
-│                    │  EXECUTION   │                                │
-│                    │  Tool Reg    │                                │
-│                    │  Selector    │                                │
-│                    │  Sandbox     │                                │
-│                    │  Executor    │                                │
-│                    └─────────────┘                                │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph API["API Layer"]
+        REST[REST Endpoints]
+        SSE[SSE Streaming]
+        JWTRL[JWT · Rate Limiter]
+    end
+
+    subgraph COG["Cognitive Plane"]
+        KB[Knowledge Store]
+        CTX[Context Builder]
+        TAG[Think / Act Gate]
+    end
+
+    subgraph SEC["Security Plane"]
+        PM[Persona Manager]
+        AE[Anomaly Engine]
+        NO[Notary · Verifier]
+    end
+
+    subgraph EXE["Execution Layer"]
+        TR[Tool Registry]
+        SEL[Selector · Sandbox]
+        EX[Executor]
+    end
+
+    API --> COG
+    API --> SEC
+    COG --> EXE
+    SEC --> EXE
+    EXE --> LED[(Immutable Ledger)]
 ```
 
 **Not multi-agent.** One agent, multiple personas. A persona is a constrained operating mode — not a separate entity.
