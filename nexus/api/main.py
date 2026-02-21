@@ -4,6 +4,16 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        return response
 
 from nexus.config import config, NexusConfig
 from nexus.version import __version__
@@ -166,7 +176,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=config.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
     )
 
@@ -174,6 +184,9 @@ def create_app() -> FastAPI:
     from nexus.auth.middleware import AuthMiddleware
     from nexus.auth.jwt import JWTManager
     app.add_middleware(AuthMiddleware, jwt_manager=JWTManager())
+
+    # Security headers — outermost middleware, applied to all responses
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Routes
     from nexus.api.routes import execute, stream, ledger, personas, tools, knowledge, health, auth

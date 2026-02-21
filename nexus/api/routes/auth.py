@@ -30,13 +30,17 @@ async def create_token(request: Request, body: TokenRequest):
             logger.error(f"[auth] DB lookup failed: {exc}")
             raise HTTPException(status_code=500, detail="Auth service unavailable")
     else:
-        # No DB available (e.g., test environment) — validate against seeded demo key
-        import hashlib as _hl
-        demo_hash = _hl.sha256(b"nxs_demo_key_12345").hexdigest()
-        if key_hash == demo_hash:
-            # Return a synthetic tenant object
-            from types import SimpleNamespace
-            tenant = SimpleNamespace(id="demo")
+        # No DB available — this branch only runs in test environments where
+        # the lifespan never sets async_session. In production, async_session
+        # is always present and DB failures raise 500 in the try/except above.
+        import os
+        if os.getenv("NEXUS_ENV", "development") != "production":
+            demo_hash = hashlib.sha256(b"nxs_demo_key_12345").hexdigest()
+            if key_hash == demo_hash:
+                from types import SimpleNamespace
+                tenant = SimpleNamespace(id="demo")
+        else:
+            raise HTTPException(status_code=503, detail="Auth service unavailable")
 
     if tenant is None:
         raise HTTPException(status_code=401, detail="Invalid API key")

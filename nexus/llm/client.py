@@ -4,6 +4,7 @@ litellm handles Anthropic, OpenAI, Ollama, and 100+ providers.
 This wrapper adds: error normalization, usage extraction, NEXUS-specific defaults.
 """
 
+import asyncio
 from typing import Any, Optional
 
 import litellm
@@ -62,7 +63,7 @@ class LLMClient:
             if response_format:
                 kwargs["response_format"] = response_format
 
-            response = await litellm.acompletion(**kwargs)
+            response = await asyncio.wait_for(litellm.acompletion(**kwargs), timeout=30)
 
             choice = response.choices[0]
             return {

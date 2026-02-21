@@ -3,6 +3,8 @@
 import logging
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 import litellm
 from litellm import ModelResponse, Usage
 
@@ -77,8 +79,8 @@ class CostTracker:
         if self._repository is not None:
             try:
                 await self._repository.add_cost(record)
-            except Exception:
-                pass  # in-memory tracking already updated
+            except Exception as exc:
+                logger.warning(f"[CostTracker] Failed to persist cost record: {exc}")
 
         # Budget checks
         cumulative = self._tenant_costs[tenant_id]

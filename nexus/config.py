@@ -57,3 +57,12 @@ class NexusConfig(BaseSettings):
 
 
 config = NexusConfig()
+
+import warnings
+if config.secret_key == "change-me-in-production":
+    warnings.warn("NEXUS_SECRET_KEY is insecure default — set a strong value in .env", stacklevel=1)
+elif len(config.secret_key.encode()) < 32:
+    warnings.warn(
+        f"NEXUS_SECRET_KEY is {len(config.secret_key.encode())} bytes — "
+        "minimum 32 required for HS256 (RFC 7518 §3.2)", stacklevel=1
+    )

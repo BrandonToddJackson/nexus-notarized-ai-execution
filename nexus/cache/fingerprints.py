@@ -1,9 +1,12 @@
 """Stores behavioral fingerprints for Gate 4 drift detection."""
 
 import json
+import re
 from typing import Optional
 
 from nexus.cache.redis_client import RedisClient
+
+_SAFE_ID = re.compile(r'[^a-zA-Z0-9_-]')
 
 
 class FingerprintCache:
@@ -24,7 +27,8 @@ class FingerprintCache:
             persona_id: Persona this fingerprint belongs to
             fingerprint: The behavioral fingerprint hash
         """
-        key = self.redis._key(tenant_id, f"fingerprints:{persona_id}")
+        safe_pid = _SAFE_ID.sub("", persona_id)[:50]
+        key = self.redis._key(tenant_id, f"fingerprints:{safe_pid}")
         await self.redis.client.rpush(key, fingerprint)
         await self.redis.client.ltrim(key, -1000, -1)
 
@@ -38,7 +42,8 @@ class FingerprintCache:
                 "frequency_map": dict[str, int]  # fingerprint -> count
             }
         """
-        key = self.redis._key(tenant_id, f"fingerprints:{persona_id}")
+        safe_pid = _SAFE_ID.sub("", persona_id)[:50]
+        key = self.redis._key(tenant_id, f"fingerprints:{safe_pid}")
         raw = await self.redis.client.lrange(key, 0, -1)
         fingerprints = [item.decode() if isinstance(item, bytes) else item for item in raw]
 

@@ -52,7 +52,8 @@ async def list_seals(
 async def get_chain_seals(request: Request, chain_id: str):
     """Get all seals for a specific chain."""
     ledger = request.app.state.ledger
-    seals = await ledger.get_chain(chain_id)
+    tenant_id = getattr(request.state, "tenant_id", "demo")
+    seals = await ledger.get_chain(chain_id, tenant_id=tenant_id)
     return {
         "chain_id": chain_id,
         "seals": [_seal_to_dict(s) for s in seals],

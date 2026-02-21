@@ -5,8 +5,8 @@ Thank you for your interest in contributing to NEXUS!
 ## Development Setup
 
 ```bash
-git clone https://github.com/your-org/nexus.git
-cd nexus
+git clone https://github.com/BrandonToddJackson/nexus-notarized-ai-execution.git
+cd nexus-notarized-ai-execution
 pip install -e ".[dev]"
 docker compose up postgres redis -d
 make seed
@@ -28,3 +28,7 @@ make test
 - All functions need docstrings
 - All public APIs need type annotations
 - Every database query must be tenant-scoped
+
+## Security
+
+If you find a security vulnerability, please **do not open a public issue**. Email the maintainers directly. See the Security section of the README for the threat model.

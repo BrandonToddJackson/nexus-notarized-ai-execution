@@ -3,12 +3,15 @@
 The last stop before a tool actually runs.
 """
 
+import logging
 from typing import Any, Optional, Tuple
 
 from nexus.types import IntentDeclaration
 from nexus.tools.registry import ToolRegistry
 from nexus.tools.sandbox import Sandbox
 from nexus.core.verifier import IntentVerifier
+
+logger = logging.getLogger(__name__)
 
 
 class ToolExecutor:
@@ -44,13 +47,15 @@ class ToolExecutor:
         try:
             definition, tool_fn = self.registry.get(intent.tool_name)
         except Exception as exc:
-            return None, str(exc)
+            logger.warning(f"[Executor] Tool lookup failed for '{intent.tool_name}': {exc}")
+            return None, "Tool not found"
 
         # Step 2: Cross-verify declared intent vs actual call
         try:
             self.verifier.verify(intent, intent.tool_name, intent.tool_params)
         except Exception as exc:
-            return None, str(exc)
+            logger.warning(f"[Executor] Intent verification failed for '{intent.tool_name}': {exc}")
+            return None, "Intent verification failed"
 
         # Step 3: Execute inside sandbox
         try:
@@ -59,4 +64,5 @@ class ToolExecutor:
             )
             return result, None
         except Exception as exc:
-            return None, str(exc)
+            logger.error(f"[Executor] Tool execution error for '{intent.tool_name}': {exc}", exc_info=True)
+            return None, "Tool execution failed"

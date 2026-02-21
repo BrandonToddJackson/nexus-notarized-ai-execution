@@ -102,33 +102,12 @@ async def stream_execute(request: Request, body: ExecuteRequest):
         # Run engine in a background task so we can yield from the queue concurrently
         async def run_engine():
             try:
-                # Create a fresh engine instance with our callback attached
-                # (engine.callbacks is a list — we don't mutate the shared engine)
-                from nexus.core.engine import NexusEngine
-                stream_engine = NexusEngine(
-                    persona_manager=engine.persona_manager,
-                    anomaly_engine=engine.anomaly_engine,
-                    notary=engine.notary,
-                    ledger=engine.ledger,
-                    chain_manager=engine.chain_manager,
-                    context_builder=engine.context_builder,
-                    tool_registry=engine.tool_registry,
-                    tool_selector=engine.tool_selector,
-                    tool_executor=engine.tool_executor,
-                    output_validator=engine.output_validator,
-                    cot_logger=engine.cot_logger,
-                    think_act_gate=engine.think_act_gate,
-                    continue_complete_gate=engine.continue_complete_gate,
-                    escalate_gate=engine.escalate_gate,
-                    llm_client=engine.llm_client,
-                    cost_tracker=engine.cost_tracker,
-                    config=engine.config,
-                    callbacks=[engine_callback],
-                )
-                await stream_engine.run(
+                # Reuse the shared engine — pass per-request callback via contextvars
+                await engine.run(
                     task=body.task,
                     tenant_id=tenant_id,
                     persona_name=body.persona,
+                    callbacks=[engine_callback],
                 )
             except (AnomalyDetected, ChainAborted, EscalationRequired) as exc:
                 await queue.put(_sse("error", {"message": str(exc)}))

@@ -78,6 +78,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             else:
                 return JSONResponse({"detail": "Invalid auth format"}, status_code=401)
         except Exception as e:
-            return JSONResponse({"detail": str(e)}, status_code=401)
+            import logging
+            logging.getLogger(__name__).warning(f"[AuthMiddleware] Auth error: {e}")
+            return JSONResponse({"detail": "Authentication failed"}, status_code=401)
 
         return await call_next(request)

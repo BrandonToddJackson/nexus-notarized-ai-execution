@@ -9,6 +9,8 @@ from typing import Optional
 from nexus.types import Seal
 from nexus.core.notary import Notary
 
+_MAX_MEMORY_SEALS = 10_000
+
 
 class Ledger:
     """Immutable audit log. Append-only. All seals go here."""
@@ -29,28 +31,35 @@ class Ledger:
             seal: The finalized seal to append
         """
         self._memory_store.append(seal)
+        if len(self._memory_store) > _MAX_MEMORY_SEALS:
+            self._memory_store = self._memory_store[-_MAX_MEMORY_SEALS:]
         if self._repository is not None:
             await self._repository.create_seal(seal)
 
-    async def get_chain(self, chain_id: str) -> list[Seal]:
+    async def get_chain(self, chain_id: str, tenant_id: str = None) -> list[Seal]:
         """Get all seals for a chain, ordered by step_index.
 
         Args:
             chain_id: The chain to retrieve seals for
+            tenant_id: If provided, only return seals belonging to this tenant
 
         Returns:
             Ordered list of seals
         """
         if self._repository is not None:
             db_seals = await self._repository.get_chain_seals(chain_id)
-            return sorted(
+            seals = sorted(
                 [Seal(**{k: v for k, v in s.__dict__.items() if not k.startswith("_")}) if not isinstance(s, Seal) else s for s in db_seals],
                 key=lambda s: s.step_index,
             )
-        return sorted(
-            [s for s in self._memory_store if s.chain_id == chain_id],
-            key=lambda s: s.step_index,
-        )
+        else:
+            seals = sorted(
+                [s for s in self._memory_store if s.chain_id == chain_id],
+                key=lambda s: s.step_index,
+            )
+        if tenant_id is not None:
+            seals = [s for s in seals if getattr(s, "tenant_id", None) == tenant_id]
+        return seals
 
     async def get_by_tenant(self, tenant_id: str, limit: int = 100, offset: int = 0) -> list[Seal]:
         """Paginated seal history for a tenant.

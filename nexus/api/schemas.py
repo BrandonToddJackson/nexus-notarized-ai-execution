@@ -1,15 +1,15 @@
 """Pydantic models for API request/response. Mirrors types.py for API I/O."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, Optional
 
 
 # ── Requests ──
 
 class ExecuteRequest(BaseModel):
-    task: str                           # "Analyze customer churn from Q3 data"
-    persona: Optional[str] = None       # "analyst" — if None, engine auto-selects
-    config: Optional[dict] = None       # override config per request
+    task: str = Field(..., max_length=10000)  # "Analyze customer churn from Q3 data"
+    persona: Optional[str] = None             # "analyst" — if None, engine auto-selects
+    config: Optional[dict] = None             # override config per request
 
 
 class CreatePersonaRequest(BaseModel):
@@ -18,12 +18,12 @@ class CreatePersonaRequest(BaseModel):
     allowed_tools: list[str]
     resource_scopes: list[str]
     intent_patterns: list[str]
-    max_ttl_seconds: int = 120
+    max_ttl_seconds: int = Field(default=120, ge=1, le=86400)
     risk_tolerance: str = "medium"
 
 
 class IngestRequest(BaseModel):
-    content: str
+    content: str = Field(..., max_length=500000)
     namespace: str = "default"
     source: str = "upload"
     access_level: str = "internal"
@@ -33,7 +33,7 @@ class IngestRequest(BaseModel):
 class KnowledgeQueryRequest(BaseModel):
     query: str
     namespace: str = "default"
-    n_results: int = 5
+    n_results: int = Field(default=5, ge=1, le=50)
 
 
 class TokenRequest(BaseModel):

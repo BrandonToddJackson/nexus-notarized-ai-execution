@@ -7,10 +7,14 @@ for the complete execution flow.
 """
 
 import asyncio
+import contextvars
 import json
 import logging
 from datetime import datetime
 from typing import Any, Optional
+
+# Per-request callbacks override instance callbacks — async-safe via ContextVar
+_request_callbacks: contextvars.ContextVar = contextvars.ContextVar("_nexus_callbacks", default=None)
 
 from nexus.types import (
     ChainPlan, Seal, IntentDeclaration, PersonaContract,
@@ -101,7 +105,7 @@ class NexusEngine:
         self.config = config or NexusConfig()
         self.callbacks = callbacks or []
 
-    async def run(self, task: str, tenant_id: str, persona_name: str = None) -> ChainPlan:
+    async def run(self, task: str, tenant_id: str, persona_name: str = None, callbacks: list = None) -> ChainPlan:
         """FULL EXECUTION LOOP.
 
         1. DECOMPOSE: Ask LLM to break task into chain steps
@@ -133,6 +137,15 @@ class NexusEngine:
         Returns:
             Completed ChainPlan with all seal IDs
         """
+        _tok = _request_callbacks.set(callbacks) if callbacks is not None else None
+        try:
+            return await self._run(task, tenant_id, persona_name)
+        finally:
+            if _tok is not None:
+                _request_callbacks.reset(_tok)
+
+    async def _run(self, task: str, tenant_id: str, persona_name: str = None) -> ChainPlan:
+        """Internal run — called by run() after context var is set."""
         logger.info(f"[Engine] run() task={task!r} tenant={tenant_id}")
         await self._fire_callbacks("task_started", {"task": task, "tenant_id": tenant_id})
 
@@ -145,6 +158,9 @@ class NexusEngine:
                 completed_steps=0,
                 total_steps=0,
             ) from exc
+
+        if not steps:
+            raise ChainAborted("Task produced empty decomposition", completed_steps=0, total_steps=0)
 
         # Create immutable chain plan
         chain = self.chain_manager.create_chain(tenant_id, task, steps)
@@ -512,15 +528,17 @@ class NexusEngine:
                 f"- {p.name}: {p.description}" for p in personas
             ) or "No personas available"
 
-            prompt = DECOMPOSE_TASK.format(
+            system_prompt = DECOMPOSE_TASK.format(
                 tool_list=tool_list,
                 persona_list=persona_list,
-                task=task,
             )
 
             try:
                 response = await self.llm_client.complete(
-                    messages=[{"role": "user", "content": prompt}]
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": json.dumps({"task": task})},
+                    ]
                 )
                 raw = response.get("content", "").strip()
 
@@ -589,9 +607,12 @@ class NexusEngine:
 
     async def _fire_callbacks(self, event: str, data: dict) -> None:
         """Invoke all registered callbacks for a lifecycle event."""
-        if not self.callbacks:
+        cbs = _request_callbacks.get()
+        if cbs is None:
+            cbs = self.callbacks
+        if not cbs:
             return
-        for cb in self.callbacks:
+        for cb in cbs:
             try:
                 if asyncio.iscoroutinefunction(cb):
                     await cb(event, data)

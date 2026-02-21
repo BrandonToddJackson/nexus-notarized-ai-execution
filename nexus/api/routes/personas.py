@@ -90,6 +90,8 @@ async def update_persona(request: Request, persona_id: str, body: CreatePersonaR
         db_persona = await repo.get_persona(tenant_id, persona_id)
         if db_persona is None:
             raise HTTPException(status_code=404, detail=f"Persona {persona_id} not found")
+        if getattr(db_persona, "tenant_id", None) != tenant_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
         await repo.upsert_persona(tenant_id, {
             "name": body.name,

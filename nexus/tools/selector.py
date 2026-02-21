@@ -74,20 +74,22 @@ class ToolSelector:
         tool_list = "\n".join(
             f"- {t.name}: {t.description}" for t in available
         )
-        context_str = ""
-        if context.documents:
-            snippets = [d.get("content", "")[:200] for d in context.documents[:3]]
-            context_str = "\n".join(snippets)
+        kb = [d.get("content", "")[:200] for d in context.documents[:3] if d.get("source") != "session_history"]
+        hist = [d.get("content", "")[:200] for d in context.documents if d.get("source") == "session_history"]
 
-        prompt = SELECT_TOOL.format(
-            step_description=task,
-            tool_list=tool_list,
-            context=context_str or "No context retrieved",
-        )
+        system_prompt = SELECT_TOOL.format(tool_list=tool_list)
+        user_content = json.dumps({
+            "step": task,
+            "kb_context": "\n".join(kb) or "None",
+            "prior_results": "\n".join(hist) or "None",
+        })
 
         try:
             response = await self.llm_client.complete(
-                messages=[{"role": "user", "content": prompt}]
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ]
             )
             raw = response.get("content", "")
             # Strip markdown code fences if present

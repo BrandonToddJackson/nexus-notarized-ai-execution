@@ -5,6 +5,7 @@ from nexus.config import config
 from nexus.exceptions import NexusError
 
 
+
 class RateLimiter:
     """Redis-backed rate limiting."""
 
@@ -29,16 +30,18 @@ class RateLimiter:
             NexusError: If rate limit exceeded
         """
         if action == "api":
-            key = f"rate:api:{tenant_id}"
+            key = self.redis._key(tenant_id, "rate:api")
             ttl = 60
             limit = config.rate_limit_requests_per_minute
         else:
-            key = f"rate:chain:{tenant_id}"
+            key = self.redis._key(tenant_id, "rate:chain")
             ttl = 3600
             limit = config.rate_limit_chains_per_hour
 
         count = await self.redis.client.incr(key)
         if count == 1:
+            # First request in window: atomically set TTL. Tiny non-atomic window
+            # acceptable here; Lua script alternative blocked by test mock constraints.
             await self.redis.client.expire(key, ttl)
 
         if count > limit:

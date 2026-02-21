@@ -10,17 +10,17 @@ const API_BASE = '/v1'
 
 class ApiClient {
   constructor() {
-    this.token = localStorage.getItem('nexus_token')
+    this.token = sessionStorage.getItem('nexus_token')
   }
 
   setToken(token) {
     this.token = token
-    localStorage.setItem('nexus_token', token)
+    sessionStorage.setItem('nexus_token', token)
   }
 
   clearToken() {
     this.token = null
-    localStorage.removeItem('nexus_token')
+    sessionStorage.removeItem('nexus_token')
   }
 
   async request(method, path, body = null) {
@@ -35,7 +35,7 @@ class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }))
-      throw new Error(error.detail || `HTTP ${response.status}`)
+      throw new Error((error.detail || `HTTP ${response.status}`).split('\n')[0].slice(0, 200))
     }
 
     return response.json()

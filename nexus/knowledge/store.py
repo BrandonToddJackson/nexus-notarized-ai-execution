@@ -4,6 +4,7 @@ Default backend: ChromaDB. Chunking: 500 chars, 50 char overlap.
 Collections are named '{tenant_id}_{namespace}' for tenant isolation.
 """
 
+import asyncio
 from typing import Optional, Callable
 
 from nexus.types import KnowledgeDocument, RetrievedContext
@@ -38,6 +39,9 @@ class KnowledgeStore:
 
     def _get_collection(self, tenant_id: str, namespace: str):
         """Get or create a ChromaDB collection for tenant+namespace."""
+        import re
+        if not re.match(r'^[a-zA-Z0-9_-]{1,50}$', namespace):
+            raise ValueError(f"Invalid namespace '{namespace}': alphanumeric, underscore, hyphen only")
         client = self._get_client()
         # Sanitize name: ChromaDB requires 3-63 chars, alphanumeric + underscores/hyphens
         name = f"{tenant_id}_{namespace}".replace("-", "_").replace(":", "_")[:63]
@@ -71,7 +75,7 @@ class KnowledgeStore:
         Returns:
             Document ID
         """
-        collection = self._get_collection(document.tenant_id, document.namespace)
+        collection = await asyncio.to_thread(self._get_collection, document.tenant_id, document.namespace)
         chunks = self._chunk_text(document.content)
         if not chunks:
             return document.id
@@ -92,18 +96,15 @@ class KnowledgeStore:
 
         if self.embedding_fn is not None:
             embeddings = self.embedding_fn(chunks)
-            collection.add(
-                ids=ids,
-                documents=chunks,
-                embeddings=embeddings,
-                metadatas=metadatas,
+            await asyncio.to_thread(
+                collection.add,
+                ids=ids, documents=chunks, embeddings=embeddings, metadatas=metadatas,
             )
         else:
             # Let ChromaDB use its default embedding function
-            collection.add(
-                ids=ids,
-                documents=chunks,
-                metadatas=metadatas,
+            await asyncio.to_thread(
+                collection.add,
+                ids=ids, documents=chunks, metadatas=metadatas,
             )
 
         return document.id
@@ -126,7 +127,7 @@ class KnowledgeStore:
             Confidence = average similarity score of top results.
         """
         try:
-            collection = self._get_collection(tenant_id, namespace)
+            collection = await asyncio.to_thread(self._get_collection, tenant_id, namespace)
         except Exception:
             return RetrievedContext(
                 query=query, documents=[], confidence=0.0,
@@ -134,7 +135,7 @@ class KnowledgeStore:
             )
 
         # Count items to avoid requesting more than available
-        count = collection.count()
+        count = await asyncio.to_thread(collection.count)
         if count == 0:
             return RetrievedContext(
                 query=query, documents=[], confidence=0.0,
@@ -157,12 +158,12 @@ class KnowledgeStore:
             query_kwargs["query_texts"] = [query]
 
         try:
-            results = collection.query(**query_kwargs)
+            results = await asyncio.to_thread(lambda: collection.query(**query_kwargs))
         except Exception:
             # where-filter may fail if no documents match; fall back without filter
             query_kwargs.pop("where", None)
             try:
-                results = collection.query(**query_kwargs)
+                results = await asyncio.to_thread(lambda: collection.query(**query_kwargs))
             except Exception:
                 return RetrievedContext(
                     query=query, documents=[], confidence=0.0,
@@ -213,8 +214,8 @@ class KnowledgeStore:
             namespace: Knowledge namespace
             document_id: Document to delete
         """
-        collection = self._get_collection(tenant_id, namespace)
-        collection.delete(where={"document_id": document_id})
+        collection = await asyncio.to_thread(self._get_collection, tenant_id, namespace)
+        await asyncio.to_thread(collection.delete, where={"document_id": document_id})
 
     def list_namespaces(self, tenant_id: str) -> list[str]:
         """List all knowledge namespaces for a tenant.
