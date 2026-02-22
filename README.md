@@ -195,7 +195,7 @@ frontend/           # React dashboard (Vite, port 5173) — 17 source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (657 tests, 17 files)
+tests/              # pytest suite (826 tests — phases 0-17)
 ```
 
 ## CLI
@@ -318,8 +318,8 @@ NEXUS v2 transforms the single-shot agent framework into a **persistent, trigger
 | Phase | Feature | Status |
 |-------|---------|--------|
 | 15 | Foundation v2 — exception hierarchy, config fields, ORM models | ✅ Done |
-| 16 | Workflow DAG Definition — step types, branching, loops, versioning | 🔲 Planned |
-| 17 | DAG Execution Engine — parallel steps, branch, retry, resume | 🔲 Planned |
+| 16 | Workflow DAG Definition — step types, branching, loops, versioning | ✅ Done |
+| 17 | DAG Execution Engine — parallel steps, branch, loop, sub-workflow, approval | ✅ Done |
 | 18 | Credential Vault — Fernet-encrypted secrets, OAuth2, runtime injection | 🔲 Planned |
 | 19 | MCP Integration — Model Context Protocol client + tool adapter | 🔲 Planned |
 | 20 | Universal HTTP Tool — REST caller with auth injection + response mapping | 🔲 Planned |

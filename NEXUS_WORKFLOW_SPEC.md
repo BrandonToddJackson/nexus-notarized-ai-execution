@@ -7,6 +7,34 @@
 
 ---
 
+## BUILD PROGRESS (v2)
+
+| Phase | Status | Tests | Notes |
+|-------|--------|-------|-------|
+| Phase 15: Foundation v2 | ✅ COMPLETE | — | v2 types (WorkflowDefinition, WorkflowStep, WorkflowEdge, WorkflowExecution, TriggerConfig, CredentialRecord, MCPServerConfig); v2 exceptions (WorkflowValidationError, CredentialError, MCPConnectionError, SandboxError, etc.); v2 config fields; v2 ORM models (WorkflowModel, WorkflowExecutionModel, TriggerModel, CredentialModel, MCPServerModel) |
+| Phase 16: Workflow Definition | ✅ COMPLETE | 118/118 ✓ | nexus/workflows/: dag.py (topological_sort Kahn's BFS, evaluate_condition safe AST walker — no eval()), validator.py (9 structural checks + LOOP_BACK exclusion from cycle/entry-point checks), manager.py (full lifecycle: create, update, activate, pause, archive, version history, rollback, duplicate, export/import) |
+| Phase 17: DAG Execution Engine | ✅ COMPLETE | 74/74 ✓ | engine.py extended: run_workflow (loads workflow, verifies active, builds context, entry points excluding LOOP_BACK), _execute_dag_layer (recursive DAG traversal via context["_done"]), _execute_action_step (full 4-gate pipeline per step — all gates apply), _execute_branch_step (condition routing + marks unchosen branches in _done), _execute_loop_step (self-loop model: LOOP_BACK is structural marker, iterates own tool_name N times), _execute_parallel_step (edge-based siblings + config["branches"] fan-out), _execute_sub_workflow_step (recursive run_workflow), _execute_approval_step (wait/poll/escalate), _resolve_params ({{step.field}} and {{trigger.field}} template resolution). run() fully backwards-compatible. 25/25 real integration checks with live engine (no mocks). |
+| Phase 18: Credential Vault | 🔲 TODO | — | Fernet encryption, OAuth2, runtime injection, persona scoping |
+| Phase 19: MCP Integration | 🔲 TODO | — | MCPClient (stdio/sse/streamable_http), MCPToolAdapter, federated tool registry |
+| Phase 20: Universal HTTP Tool | 🔲 TODO | — | http_request + data_transform built-in tools |
+| Phase 21: Code Sandbox v2 | 🔲 TODO | — | Python/JS subprocess sandbox, forbidden import check, memory limits |
+| Phase 22: Trigger System | 🔲 TODO | — | Webhooks, cron scheduler, event bus |
+| Phase 23: NL Workflow Generation | 🔲 TODO | — | LLM → validated DAG via WorkflowGenerator + refine/explain |
+| Phase 24: Visual Canvas | 🔲 TODO | — | React Flow drag-and-drop workflow editor with NL generation |
+| Phase 25: Frontend v2 | 🔲 TODO | — | Credentials UI, MCP servers, execution history, marketplace browser |
+| Phase 26: Background Execution | 🔲 TODO | — | ARQ task queue, async workflow runs, status polling |
+| Phase 27: Plugin Marketplace | 🔲 TODO | — | Plugin SDK, PyPI registry, install/uninstall |
+| Phase 28: Persistence v2 | 🔲 TODO | — | Alembic migrations for all v2 models |
+| Phase 29: API v2 | 🔲 TODO | — | /v2/ routes: workflows, triggers, credentials, webhooks, MCP, marketplace |
+| Phase 30: Tests v2 | 🔲 TODO | — | Full v2 test coverage (dag_engine, credentials, triggers, mcp, http_tool, sandbox) |
+| Phase 31: Infrastructure v2 | 🔲 TODO | — | Worker/scheduler services, Docker updates, nginx config |
+| Phase 32: Examples & Docs v2 | 🔲 TODO | — | Slack→Sheets, email classifier, scheduled report, MCP GitHub examples; README v2 section |
+
+**Last verified:** 2026-02-22
+**Test suite:** `.venv312/bin/pytest tests/ -v` → **826/826 passed** (v1 phases 0-14 + v2 phases 15-17)
+
+---
+
 ## BUILD ORDER (Strict — Follow This Sequence)
 
 ```

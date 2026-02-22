@@ -26,9 +26,12 @@
 | Phase 12: Infrastructure | ✅ COMPLETE | — | Dockerfile, docker-compose.yml, docker-compose.quickstart.yml, CI pipeline, Makefile |
 | Phase 13: Tests | ✅ COMPLETE | 590/590 ✓ | All phases real assertions; 0 stubs; 0 skips; trust, locks, config/loader covered |
 | Phase 14: Examples & Docs | ✅ COMPLETE | — | quickstart, custom_tool, local_llm, customer_support, code_review; docs/quickstart.md, philosophy.md, architecture.md, comparison.md, api-reference.md, tutorials/ |
+| Phase 15: Foundation v2 | ✅ COMPLETE | — | v2 types (WorkflowDefinition, WorkflowStep, WorkflowEdge, WorkflowExecution, TriggerConfig, CredentialRecord, MCPServerConfig); v2 exceptions; v2 config fields; v2 ORM models (WorkflowModel, WorkflowExecutionModel, TriggerModel, CredentialModel, MCPServerModel) |
+| Phase 16: Workflow Definition | ✅ COMPLETE | 118/118 ✓ | nexus/workflows/: dag.py (topological_sort Kahn's BFS, evaluate_condition safe AST walker, no eval()), validator.py (9 structural checks + LOOP_BACK exclusion from cycle/entry-point checks), manager.py (full lifecycle: create, update, activate, pause, archive, version history, rollback, duplicate, export/import) |
+| Phase 17: DAG Execution Engine | ✅ COMPLETE | 74/74 ✓ | engine.py: run_workflow, _execute_dag_layer (recursive DAG traversal via context["_done"]), _execute_action_step (full 4-gate pipeline per step), _execute_branch_step (condition routing + unchosen branch marking), _execute_loop_step (self-loop model: LOOP_BACK structural marker + iterates own tool_name), _execute_parallel_step (edge-based siblings + config["branches"] fan-out), _execute_sub_workflow_step, _execute_approval_step, _resolve_params ({{template}} resolution). run() backwards-compatible. 25 real integration checks with live engine (no mocks). |
 
 **Last verified:** 2026-02-22
-**Test suite:** `.venv312/bin/pytest tests/ -v` → **590/590 passed**
+**Test suite:** `.venv312/bin/pytest tests/ -v` → **826/826 passed**
 
 **Audit fixes applied (2026-02-21):**
 - `ledger.py`: `Seal(**s.__dict__)` → filter `_sa_instance_state` (SQLAlchemy internal key was crashing DB retrieval)
