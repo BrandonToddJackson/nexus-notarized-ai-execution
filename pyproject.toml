@@ -46,6 +46,15 @@ include = ["nexus*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    # Our intentional insecure-default warning is noise in tests
+    "ignore::UserWarning:nexus.config",
+    # PyJWT warns when test demo key < 32 bytes
+    "ignore::jwt.InsecureKeyLengthWarning",
+    # pydantic and SQLAlchemy call datetime.utcnow() internally; not our code to fix
+    "ignore::DeprecationWarning:pydantic",
+    "ignore::DeprecationWarning:sqlalchemy",
+]
 
 [tool.ruff]
 line-length = 120

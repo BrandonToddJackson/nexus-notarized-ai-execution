@@ -17,7 +17,7 @@ Phase coverage:
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -131,7 +131,7 @@ class TestPhase1AnomalyGates:
         result = await engine.check(
             persona=self._persona(),
             intent=self._intent(),
-            activation_time=datetime.utcnow(),
+            activation_time=datetime.now(timezone.utc),
         )
         scope_gate = next(g for g in result.gates if g.gate_name == "scope")
         assert scope_gate.verdict.value == "pass"
@@ -142,7 +142,7 @@ class TestPhase1AnomalyGates:
         result = await engine.check(
             persona=self._persona(tools=["knowledge_search"]),
             intent=self._intent(tool="send_email"),
-            activation_time=datetime.utcnow(),
+            activation_time=datetime.now(timezone.utc),
         )
         scope_gate = next(g for g in result.gates if g.gate_name == "scope")
         assert scope_gate.verdict.value == "fail"
@@ -153,7 +153,7 @@ class TestPhase1AnomalyGates:
         result = await engine.check(
             persona=self._persona(),
             intent=self._intent(),
-            activation_time=datetime.utcnow(),
+            activation_time=datetime.now(timezone.utc),
         )
         ttl_gate = next(g for g in result.gates if g.gate_name == "ttl")
         assert ttl_gate.verdict.value == "pass"
@@ -164,7 +164,7 @@ class TestPhase1AnomalyGates:
         result = await engine.check(
             persona=self._persona(tools=["knowledge_search"]),
             intent=self._intent(tool="send_email"),
-            activation_time=datetime.utcnow(),
+            activation_time=datetime.now(timezone.utc),
         )
         from nexus.types import GateVerdict
         assert result.overall_verdict == GateVerdict.FAIL
@@ -175,7 +175,7 @@ class TestPhase1AnomalyGates:
         result = await engine.check(
             persona=self._persona(),
             intent=self._intent(),
-            activation_time=datetime.utcnow(),
+            activation_time=datetime.now(timezone.utc),
         )
         gate_names = {g.gate_name for g in result.gates}
         assert "scope" in gate_names

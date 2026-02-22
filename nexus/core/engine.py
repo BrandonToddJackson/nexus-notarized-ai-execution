@@ -10,7 +10,7 @@ import asyncio
 import contextvars
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from nexus.types import (
@@ -250,7 +250,7 @@ class NexusEngine:
                 # ── d. ACTIVATE PERSONA (officially starts TTL clock) ────────
                 activated_persona = self.persona_manager.activate(step_persona_name, tenant_id)
                 activation_done = True
-                activation_time = self.persona_manager.get_activation_time(step_persona_name) or datetime.utcnow()
+                activation_time = self.persona_manager.get_activation_time(step_persona_name) or datetime.now(timezone.utc)
 
                 self.cot_logger.log(cot_key, f"Persona '{step_persona_name}' activated")
 
@@ -490,7 +490,7 @@ class NexusEngine:
         if chain.status not in (ChainStatus.COMPLETED, ChainStatus.FAILED, ChainStatus.ESCALATED):
             chain = chain.model_copy(update={
                 "status": ChainStatus.COMPLETED,
-                "completed_at": datetime.utcnow(),
+                "completed_at": datetime.now(timezone.utc),
             })
 
         logger.info(f"[Engine] Chain {chain.id} finished: status={chain.status}")

@@ -5,7 +5,7 @@ cryptographically verify that an execution audit trail was not tampered with.
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -59,7 +59,7 @@ async def _verify(chain_id: str, tenant_id: str) -> None:
             cot_trace=list(m.cot_trace) if m.cot_trace else [],
             fingerprint=str(m.fingerprint or ""),
             parent_fingerprint=str(m.parent_fingerprint or ""),
-            created_at=m.created_at if isinstance(m.created_at, datetime) else datetime.utcnow(),
+            created_at=m.created_at if isinstance(m.created_at, datetime) else datetime.now(timezone.utc),
             completed_at=m.completed_at if isinstance(m.completed_at, datetime) else None,
             error=str(m.error) if m.error else None,
         ))

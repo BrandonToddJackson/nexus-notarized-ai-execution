@@ -3,7 +3,7 @@
 import asyncio
 import json
 import typer
-from datetime import datetime
+from datetime import datetime, timezone
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -51,7 +51,7 @@ async def _audit(tenant_id: str, limit: int, export_path: str | None, fmt: str) 
             })
 
         payload = {
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": datetime.now(timezone.utc).isoformat(),
             "tenant_id": tenant_id,
             "total": total,
             "seals": records,

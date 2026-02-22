@@ -1,7 +1,7 @@
 """JWT token management: create, validate, refresh."""
 
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from nexus.config import config
 from nexus.exceptions import NexusError
@@ -23,8 +23,8 @@ class JWTManager:
         payload = {
             "tenant_id": tenant_id,
             "role": role,
-            "exp": datetime.utcnow() + timedelta(minutes=config.jwt_expiry_minutes),
-            "iat": datetime.utcnow(),
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=config.jwt_expiry_minutes),
+            "iat": datetime.now(timezone.utc),
         }
         return jwt.encode(payload, config.secret_key, algorithm=config.jwt_algorithm)
 

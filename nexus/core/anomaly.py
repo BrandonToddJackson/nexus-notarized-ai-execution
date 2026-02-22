@@ -14,7 +14,7 @@ Implementation notes:
 """
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from nexus.types import (
@@ -182,7 +182,7 @@ class AnomalyEngine:
         Score: remaining_seconds / max_ttl_seconds (1.0 = just activated).
         Threshold: 0.0 (any time remaining = pass).
         """
-        elapsed = (datetime.utcnow() - activation_time).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - activation_time).total_seconds()
         remaining = persona.max_ttl_seconds - elapsed
         score = max(0.0, remaining / persona.max_ttl_seconds)
 

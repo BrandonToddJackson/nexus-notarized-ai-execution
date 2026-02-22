@@ -10,7 +10,7 @@ Implementation notes:
 """
 
 import fnmatch
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from nexus.types import PersonaContract
@@ -58,7 +58,7 @@ class PersonaManager:
             raise PersonaViolation(f"Persona '{persona_name}' not found")
         if not persona.is_active:
             raise PersonaViolation(f"Persona '{persona_name}' is disabled")
-        self._active[persona_name] = datetime.utcnow()
+        self._active[persona_name] = datetime.now(timezone.utc)
         return persona
 
     def validate_action(self, persona: PersonaContract, tool_name: str, resource_targets: list[str]) -> bool:
@@ -114,7 +114,7 @@ class PersonaManager:
         persona = self._contracts.get(persona_name)
         if persona is None:
             return 0
-        elapsed = (datetime.utcnow() - activation).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - activation).total_seconds()
         remaining = persona.max_ttl_seconds - elapsed
         return max(0, int(remaining))
 

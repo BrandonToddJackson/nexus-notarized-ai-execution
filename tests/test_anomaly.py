@@ -5,7 +5,7 @@ All tests use the real AnomalyEngine implementation — no stubs.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from nexus.types import PersonaContract, IntentDeclaration, GateVerdict, RiskLevel
 from nexus.core.anomaly import AnomalyEngine
@@ -143,7 +143,7 @@ class TestGate3TTL:
     def test_fresh_activation_passes(self):
         engine = AnomalyEngine(_config())
         persona = _researcher()  # max_ttl_seconds=60
-        activation_time = datetime.utcnow()  # just activated
+        activation_time = datetime.now(timezone.utc)  # just activated
         result = engine._gate3_ttl(persona, activation_time)
         assert result.gate_name == "ttl"
         assert result.verdict == GateVerdict.PASS
@@ -152,7 +152,7 @@ class TestGate3TTL:
     def test_expired_activation_fails(self):
         engine = AnomalyEngine(_config())
         persona = _researcher()  # max_ttl_seconds=60
-        activation_time = datetime.utcnow() - timedelta(seconds=120)  # 2× TTL ago
+        activation_time = datetime.now(timezone.utc) - timedelta(seconds=120)  # 2× TTL ago
         result = engine._gate3_ttl(persona, activation_time)
         assert result.verdict == GateVerdict.FAIL
         assert result.score == 0.0
@@ -217,7 +217,7 @@ class TestCombinedGates:
             _config(),
             embedding_service=MockEmbeddingService(0.90),
         )
-        activation_time = datetime.utcnow()
+        activation_time = datetime.now(timezone.utc)
         intent = _intent(tool="knowledge_search", resources=["kb:docs"])
         result = await engine.check(persona, intent, activation_time)
         assert result.overall_verdict == GateVerdict.PASS
@@ -231,7 +231,7 @@ class TestCombinedGates:
             _config(),
             embedding_service=MockEmbeddingService(0.90),
         )
-        activation_time = datetime.utcnow()
+        activation_time = datetime.now(timezone.utc)
         # send_email is NOT in researcher's allowed_tools → Gate 1 FAIL
         intent = _intent(tool="send_email", resources=["kb:docs"])
         result = await engine.check(persona, intent, activation_time)
@@ -247,7 +247,7 @@ class TestCombinedGates:
         # No embedding service → Gate 2 SKIP
         # No fingerprint history → Gate 4 SKIP
         engine = AnomalyEngine(_config(), embedding_service=None)
-        activation_time = datetime.utcnow()
+        activation_time = datetime.now(timezone.utc)
         intent = _intent(tool="knowledge_search", resources=["kb:docs"])
         result = await engine.check(persona, intent, activation_time)
         assert result.overall_verdict == GateVerdict.PASS

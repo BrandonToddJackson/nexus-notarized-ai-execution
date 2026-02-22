@@ -4,7 +4,7 @@ A ChainPlan is an immutable execution plan. Once created, steps CANNOT be modifi
 The chain tracks which steps have been completed via seal_ids.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from nexus.types import ChainPlan, ChainStatus
@@ -47,7 +47,7 @@ class ChainManager:
         completed_at = None
         if len(updated_seals) >= len(chain.steps):
             new_status = ChainStatus.COMPLETED
-            completed_at = datetime.utcnow()
+            completed_at = datetime.now(timezone.utc)
         return chain.model_copy(update={
             "seals": updated_seals,
             "status": new_status,
@@ -67,7 +67,7 @@ class ChainManager:
         return chain.model_copy(update={
             "status": ChainStatus.FAILED,
             "error": error,
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
         })
 
     def escalate(self, chain: ChainPlan, reason: str) -> ChainPlan:
@@ -83,7 +83,7 @@ class ChainManager:
         return chain.model_copy(update={
             "status": ChainStatus.ESCALATED,
             "error": reason,
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
         })
 
     def get_current_step(self, chain: ChainPlan) -> Optional[dict]:

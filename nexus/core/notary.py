@@ -9,7 +9,7 @@ Implementation notes:
 """
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from nexus.types import (
@@ -87,7 +87,7 @@ class Notary:
         return seal.model_copy(update={
             "tool_result": tool_result,
             "status": status,
-            "completed_at": datetime.utcnow(),
+            "completed_at": datetime.now(timezone.utc),
             "error": error,
         })
 

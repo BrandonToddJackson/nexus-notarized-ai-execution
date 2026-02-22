@@ -10,7 +10,7 @@ class NexusConfig(BaseSettings):
     app_name: str = "nexus"
     debug: bool = False
     log_level: str = "INFO"
-    secret_key: str = "change-me-in-production"
+    secret_key: str = "change-me-in-production-nexus-insecure-default-key"
 
     # ── Database ──
     database_url: str = "postgresql+asyncpg://nexus:nexus@localhost:5432/nexus"
@@ -59,7 +59,7 @@ class NexusConfig(BaseSettings):
 
 config = NexusConfig()
 
-if config.secret_key == "change-me-in-production":
+if config.secret_key == "change-me-in-production-nexus-insecure-default-key":
     warnings.warn("NEXUS_SECRET_KEY is insecure default — set a strong value in .env", stacklevel=1)
 elif len(config.secret_key.encode()) < 32:
     warnings.warn(
