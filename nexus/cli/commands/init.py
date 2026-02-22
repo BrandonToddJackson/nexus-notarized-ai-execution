@@ -255,11 +255,18 @@ def init_project(
     os.makedirs(name)
     os.makedirs(os.path.join(name, "knowledge"))
 
+    import pathlib
+    _tpl_dir = pathlib.Path(__file__).parent.parent / "templates" / "project"
+
+    def _tpl(filename: str, fallback: str) -> str:
+        p = _tpl_dir / filename
+        return p.read_text() if p.exists() else fallback
+
     files = {
-        ".env": _ENV_TEMPLATE,
-        "personas.yaml": _PERSONAS_YAML,
-        "tools.yaml": _TOOLS_YAML,
-        "main.py": _MAIN_PY,
+        ".env": _tpl(".env.tpl", _ENV_TEMPLATE),
+        "personas.yaml": _tpl("personas.yaml.tpl", _PERSONAS_YAML),
+        "tools.yaml": _tpl("tools.yaml.tpl", _TOOLS_YAML),
+        "main.py": _tpl("main.py.tpl", _MAIN_PY),
         "docker-compose.yml": _DOCKER_COMPOSE,
     }
 

@@ -1,0 +1,53 @@
+# Default built-in tool definitions for NEXUS.
+# These document risk levels, resource scopes, and approval requirements.
+# Loaded by nexus/config/loader.py for declarative configuration.
+
+tools:
+  - name: knowledge_search
+    description: Search the tenant's knowledge base using semantic similarity
+    risk_level: low
+    resource_pattern: "kb:*"
+    timeout_seconds: 10
+    requires_approval: false
+
+  - name: web_search
+    description: Search the web for information (stub in v1 — logs query, returns mock)
+    risk_level: low
+    resource_pattern: "web:*"
+    timeout_seconds: 15
+    requires_approval: false
+
+  - name: web_fetch
+    description: Fetch and parse a web page by URL
+    risk_level: low
+    resource_pattern: "web:*"
+    timeout_seconds: 20
+    requires_approval: false
+
+  - name: file_read
+    description: Read the contents of a file from the filesystem
+    risk_level: low
+    resource_pattern: "file:read:*"
+    timeout_seconds: 10
+    requires_approval: false
+
+  - name: file_write
+    description: Write content to a file on the filesystem
+    risk_level: medium
+    resource_pattern: "file:write:*"
+    timeout_seconds: 10
+    requires_approval: false
+
+  - name: send_email
+    description: Send an email message (stub in v1 — logs content, does not deliver)
+    risk_level: high
+    resource_pattern: "email:*"
+    timeout_seconds: 15
+    requires_approval: true
+
+  - name: compute_stats
+    description: Compute descriptive statistics on a list of numbers
+    risk_level: low
+    resource_pattern: "data:*"
+    timeout_seconds: 5
+    requires_approval: false

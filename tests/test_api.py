@@ -413,6 +413,9 @@ class TestExecuteEndpoint:
             headers=auth_headers,
         )
         assert resp.status_code == 200
-        # Verify persona was passed to engine.run
+        # Verify persona was forwarded to engine.run as persona_name kwarg
         call_kwargs = mock_engine.run.call_args
-        assert call_kwargs is not None
+        assert call_kwargs is not None, "engine.run was never called"
+        assert call_kwargs.kwargs.get("persona_name") == "researcher", (
+            f"Route must forward body.persona → persona_name='researcher', got: {call_kwargs}"
+        )

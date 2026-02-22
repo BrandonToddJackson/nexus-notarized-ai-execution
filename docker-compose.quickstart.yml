@@ -1,0 +1,63 @@
+# NEXUS Quickstart Compose — minimal stack, pre-seeded, no API key required.
+#
+# Starts only the API + infrastructure. No LLM calls; single-step fallback mode.
+#
+# Usage:
+#   docker compose -f docker-compose.quickstart.yml up --build
+#   curl -X POST http://localhost:8000/v1/execute \
+#     -H "Content-Type: application/json" \
+#     -H "Authorization: nxs_demo_key_12345" \
+#     -d '{"task": "What is NEXUS?"}'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      NEXUS_DATABASE_URL: postgresql+asyncpg://nexus:nexus@postgres:5432/nexus
+      NEXUS_REDIS_URL: redis://redis:6379/0
+      NEXUS_SECRET_KEY: quickstart-insecure-key-change-in-prod
+      NEXUS_DEFAULT_LLM_MODEL: mock  # no LLM calls; uses single-step fallback
+      NEXUS_GATE_INTENT_THRESHOLD: "0.3"
+      NEXUS_AUTO_SEED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - quickstart_chroma:/app/data/chroma
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus
+      POSTGRES_DB: nexus
+    volumes:
+      - quickstart_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  quickstart_pgdata:
+  quickstart_chroma:

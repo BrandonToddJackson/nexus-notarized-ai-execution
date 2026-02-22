@@ -17,6 +17,7 @@ from nexus.types import (
     ChainPlan, Seal, PersonaContract,
     ActionStatus, ChainStatus, GateVerdict, ReasoningDecision,
 )
+from nexus.core.trust import maybe_degrade
 from nexus.exceptions import (
     AnomalyDetected, ChainAborted, EscalationRequired,
 )
@@ -299,6 +300,13 @@ class NexusEngine:
                     seal = seal.model_copy(update={"cot_trace": cot_trace})
                     await self.ledger.append(seal)
                     self.cot_logger.clear(cot_key)
+
+                    # Degrade trust tier on gate failure (persona's track record worsens)
+                    try:
+                        degraded = maybe_degrade(activated_persona)
+                        self.persona_manager._contracts[step_persona_name] = degraded
+                    except Exception:
+                        pass  # trust update is best-effort; never block execution path
 
                     self.persona_manager.revoke(step_persona_name)
                     activation_done = False

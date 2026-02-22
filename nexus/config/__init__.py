@@ -1,8 +1,15 @@
-"""Application configuration. All env vars defined here with defaults."""
+"""Application configuration + declarative YAML config loader for NEXUS.
+
+All env vars defined here with NEXUS_ prefix.
+YAML loaders: load_personas_yaml(), load_tools_yaml()
+"""
 
 import warnings
 from pydantic_settings import BaseSettings
 from typing import Optional
+
+from nexus.config.loader import load_personas_yaml, load_tools_yaml
+from nexus.config.schema import PersonaYAML, ToolYAML, PersonasConfig, ToolsConfig
 
 
 class NexusConfig(BaseSettings):
@@ -66,3 +73,15 @@ elif len(config.secret_key.encode()) < 32:
         f"NEXUS_SECRET_KEY is {len(config.secret_key.encode())} bytes — "
         "minimum 32 required for HS256 (RFC 7518 §3.2)", stacklevel=1
     )
+
+
+__all__ = [
+    "NexusConfig",
+    "config",
+    "load_personas_yaml",
+    "load_tools_yaml",
+    "PersonaYAML",
+    "ToolYAML",
+    "PersonasConfig",
+    "ToolsConfig",
+]

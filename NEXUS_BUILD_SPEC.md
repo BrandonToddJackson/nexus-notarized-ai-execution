@@ -22,12 +22,13 @@
 | Phase 8: Auth | ✅ COMPLETE | ✓ | rate_limiter, jwt, middleware — all implemented and tested |
 | Phase 9: API | ✅ COMPLETE | ✓ | All route handlers: execute, stream (SSE), ledger, personas, tools, knowledge, health, auth |
 | Phase 10: CLI | ✅ COMPLETE | ✓ | 11 commands: init, run, dev, seed, verify, replay, inspect, audit, gates, config, tools |
-| Phase 11: Frontend | 🔲 TODO | — | React + Vite + Tailwind (10 pages) |
-| Phase 12: Infrastructure | 🔲 TODO | — | Dockerfile, docker-compose full stack |
-| Phase 13: Tests | ✅ COMPLETE | 267/267 ✓ | Phases 1-10 all real assertions; 0 stubs; 0 skips |
+| Phase 11: Frontend | ✅ COMPLETE | — | React + Vite + Tailwind (17 files): Execute, Ledger, Personas, Tools, Knowledge, Settings, Dashboard, Login; SSE streaming GateVisualizer; auth flow |
+| Phase 12: Infrastructure | ✅ COMPLETE | — | Dockerfile, docker-compose.yml, docker-compose.quickstart.yml, CI pipeline, Makefile |
+| Phase 13: Tests | ✅ COMPLETE | 590/590 ✓ | All phases real assertions; 0 stubs; 0 skips; trust, locks, config/loader covered |
+| Phase 14: Examples & Docs | ✅ COMPLETE | — | quickstart, custom_tool, local_llm, customer_support, code_review; docs/quickstart.md, philosophy.md, architecture.md, comparison.md, api-reference.md, tutorials/ |
 
-**Last verified:** 2026-02-21
-**Test suite:** `.venv312/bin/pytest tests/ -v` → **267/267 passed**
+**Last verified:** 2026-02-22
+**Test suite:** `.venv312/bin/pytest tests/ -v` → **590/590 passed**
 
 **Audit fixes applied (2026-02-21):**
 - `ledger.py`: `Seal(**s.__dict__)` → filter `_sa_instance_state` (SQLAlchemy internal key was crashing DB retrieval)

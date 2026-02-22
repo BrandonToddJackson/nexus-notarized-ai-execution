@@ -185,12 +185,17 @@ nexus/
 ├── tools/          # Execution: registry, sandbox, executor, built-ins
 ├── db/             # Persistence: models, repository, migrations
 ├── llm/            # LLM integration via litellm + cost tracking
-├── cache/          # Redis: fingerprint store, rate limiting
+├── cache/          # Redis: fingerprint store, rate limiting, distributed locks
 ├── auth/           # JWT, middleware, rate limiter
 ├── api/            # FastAPI routes and schemas
-├── cli/            # Typer CLI commands
-frontend/           # React dashboard (Vite, port 5173)
-tests/              # pytest suite (267 tests)
+├── cli/            # Typer CLI commands + project templates
+├── callbacks/      # NexusCallback protocol + LoggingCallback
+├── config/         # NexusConfig (BaseSettings) + YAML loaders
+frontend/           # React dashboard (Vite, port 5173) — 17 source files
+examples/           # quickstart, custom_tool, local_llm, customer_support, code_review
+docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
+sdk/python/         # Async HTTP client SDK (nexus_client.py)
+tests/              # pytest suite (590 tests)
 ```
 
 ## CLI

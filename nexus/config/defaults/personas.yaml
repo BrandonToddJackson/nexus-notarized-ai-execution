@@ -1,0 +1,102 @@
+# Default persona definitions for NEXUS.
+# These are loaded at startup when no database is available (e.g., nexus run, quickstart).
+# Override by adding entries in your project's personas.yaml.
+
+personas:
+  - name: researcher
+    description: Searches and retrieves information from knowledge bases and the web
+    allowed_tools:
+      - knowledge_search
+      - web_search
+      - web_fetch
+      - file_read
+    resource_scopes:
+      - "kb:*"
+      - "web:*"
+      - "file:read:*"
+    intent_patterns:
+      - search for information
+      - find data about
+      - look up
+      - research
+    risk_tolerance: low
+    max_ttl_seconds: 60
+    trust_tier: cold_start
+
+  - name: analyst
+    description: Analyzes data and computes statistics
+    allowed_tools:
+      - knowledge_search
+      - compute_stats
+      - file_read
+      - file_write
+    resource_scopes:
+      - "kb:*"
+      - "file:*"
+      - "data:*"
+    intent_patterns:
+      - analyze data
+      - compute statistics
+      - calculate
+      - summarize findings
+    risk_tolerance: medium
+    max_ttl_seconds: 120
+    trust_tier: cold_start
+
+  - name: creator
+    description: Creates content — documents, reports, summaries
+    allowed_tools:
+      - knowledge_search
+      - file_write
+    resource_scopes:
+      - "kb:*"
+      - "file:write:*"
+    intent_patterns:
+      - write
+      - create
+      - draft
+      - generate content
+      - compose
+    risk_tolerance: low
+    max_ttl_seconds: 90
+    trust_tier: cold_start
+
+  - name: communicator
+    description: Sends emails and messages; requires approval for HIGH risk
+    allowed_tools:
+      - knowledge_search
+      - send_email
+      - file_read
+    resource_scopes:
+      - "kb:*"
+      - "email:*"
+      - "file:read:*"
+    intent_patterns:
+      - send email
+      - notify
+      - communicate
+      - message
+    risk_tolerance: high
+    max_ttl_seconds: 60
+    trust_tier: cold_start
+
+  - name: operator
+    description: Executes code and system operations
+    allowed_tools:
+      - knowledge_search
+      - file_read
+      - file_write
+      - compute_stats
+    resource_scopes:
+      - "kb:*"
+      - "file:*"
+      - "system:*"
+    intent_patterns:
+      - execute
+      - run
+      - deploy
+      - configure
+      - operate
+    risk_tolerance: high
+    max_ttl_seconds: 180
+    trust_tier: cold_start

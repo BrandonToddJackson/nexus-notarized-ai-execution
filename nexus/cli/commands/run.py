@@ -51,22 +51,27 @@ def _build_in_memory_engine():
 
     cfg = NexusConfig()
 
-    # Personas from defaults — no DB needed
-    persona_contracts = []
-    for p in DEFAULT_PERSONAS:
-        try:
-            risk = RiskLevel(p["risk_tolerance"])
-        except ValueError:
-            risk = RiskLevel.MEDIUM
-        persona_contracts.append(PersonaContract(
-            name=p["name"],
-            description=p["description"],
-            allowed_tools=p["allowed_tools"],
-            resource_scopes=p["resource_scopes"],
-            intent_patterns=p["intent_patterns"],
-            max_ttl_seconds=p["max_ttl_seconds"],
-            risk_tolerance=risk,
-        ))
+    # Personas: prefer personas.yaml in cwd (nexus init projects), fall back to defaults
+    try:
+        from nexus.config.loader import load_personas_yaml
+        persona_contracts = load_personas_yaml()
+    except FileNotFoundError:
+        # No personas.yaml in cwd — build from embedded seed defaults
+        persona_contracts = []
+        for p in DEFAULT_PERSONAS:
+            try:
+                risk = RiskLevel(p["risk_tolerance"])
+            except ValueError:
+                risk = RiskLevel.MEDIUM
+            persona_contracts.append(PersonaContract(
+                name=p["name"],
+                description=p["description"],
+                allowed_tools=p["allowed_tools"],
+                resource_scopes=p["resource_scopes"],
+                intent_patterns=p["intent_patterns"],
+                max_ttl_seconds=p["max_ttl_seconds"],
+                risk_tolerance=risk,
+            ))
     persona_manager = PersonaManager(persona_contracts)
 
     with console.status("[dim]Loading embedding model...[/dim]"):
