@@ -105,3 +105,89 @@ class KnowledgeDocModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (Index("ix_knowledge_tenant_ns", "tenant_id", "namespace"),)
+
+
+# ── Phase 15: Workflow, Trigger, Credential, MCP ORM Models ─────────────────
+
+
+class WorkflowModel(Base):
+    __tablename__ = "workflows"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, default="")
+    version = Column(Integer, default=1)
+    status = Column(String, default="draft")        # WorkflowStatus value
+    trigger_config = Column(JSON, default=dict)
+    steps = Column(JSON, default=list)              # serialized WorkflowStep list
+    edges = Column(JSON, default=list)              # serialized WorkflowEdge list
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String, default="")
+    tags = Column(JSON, default=list)
+    settings = Column(JSON, default=dict)
+
+    __table_args__ = (Index("ix_workflow_tenant_name", "tenant_id", "name"),)
+
+
+class WorkflowExecutionModel(Base):
+    __tablename__ = "workflow_executions"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workflow_id = Column(String, ForeignKey("workflows.id"), nullable=False, index=True)
+    workflow_version = Column(Integer, nullable=False)
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    trigger_type = Column(String, nullable=False)   # TriggerType value
+    trigger_data = Column(JSON, default=dict)
+    chain_id = Column(String, default="")
+    status = Column(String, default="planning")     # ChainStatus value
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    error = Column(Text, nullable=True)
+    step_results = Column(JSON, default=dict)
+
+    __table_args__ = (Index("ix_wf_exec_tenant_workflow", "tenant_id", "workflow_id"),)
+
+
+class TriggerConfigModel(Base):
+    __tablename__ = "trigger_configs"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workflow_id = Column(String, ForeignKey("workflows.id"), nullable=False, index=True)
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    trigger_type = Column(String, nullable=False)   # TriggerType value
+    enabled = Column(Boolean, default=True)
+    config = Column(JSON, default=dict)
+    last_triggered_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CredentialModel(Base):
+    __tablename__ = "credentials"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    credential_type = Column(String, nullable=False)    # CredentialType value
+    service_name = Column(String, nullable=False)
+    encrypted_data = Column(Text, nullable=False)       # AES-256-GCM ciphertext
+    scoped_personas = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (Index("ix_credential_tenant_name", "tenant_id", "name", unique=True),)
+
+
+class MCPServerModel(Base):
+    __tablename__ = "mcp_servers"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    url = Column(String, nullable=False)
+    transport = Column(String, nullable=False)          # "stdio"|"sse"|"streamable_http"
+    command = Column(String, nullable=True)
+    args = Column(JSON, default=list)
+    env = Column(JSON, default=dict)
+    enabled = Column(Boolean, default=True)
+    discovered_tools = Column(JSON, default=list)
+    last_connected_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (Index("ix_mcp_tenant_name", "tenant_id", "name", unique=True),)

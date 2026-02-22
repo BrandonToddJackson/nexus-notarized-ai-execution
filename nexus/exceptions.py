@@ -60,3 +60,41 @@ class EscalationRequired(NexusError):
     def __init__(self, message: str, context: dict = None, **kwargs):
         super().__init__(message, **kwargs)
         self.context = context or {}
+
+
+# ── Phase 15: Workflow, Trigger, Credential, MCP Exceptions ─────────────────
+
+
+class WorkflowNotFound(NexusError):
+    """Requested workflow does not exist or is not accessible by this tenant."""
+    def __init__(self, message: str, workflow_id: str = "", **kwargs):
+        super().__init__(message, **kwargs)
+        self.workflow_id = workflow_id
+
+
+class WorkflowValidationError(NexusError):
+    """Workflow definition is structurally invalid (cycles, missing steps, etc.)."""
+    def __init__(self, message: str, violations: list = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.violations = violations or []
+
+
+class TriggerError(NexusError):
+    """A workflow trigger failed to fire or configure."""
+    def __init__(self, message: str, trigger_type: str = "", **kwargs):
+        super().__init__(message, **kwargs)
+        self.trigger_type = trigger_type
+
+
+class CredentialError(NexusError):
+    """Credential retrieval or decryption failed."""
+    def __init__(self, message: str, credential_id: str = "", **kwargs):
+        super().__init__(message, **kwargs)
+        self.credential_id = credential_id
+
+
+class MCPConnectionError(NexusError):
+    """MCP server connection or tool discovery failed."""
+    def __init__(self, message: str, server_name: str = "", **kwargs):
+        super().__init__(message, **kwargs)
+        self.server_name = server_name
