@@ -51,7 +51,6 @@ def _build_engine(model: str):
     from nexus.reasoning.continue_complete import ContinueCompleteGate
     from nexus.reasoning.escalate import EscalateGate
     from nexus.core.engine import NexusEngine
-    from nexus.llm.cost_tracker import CostTracker
     from nexus.db.seed import DEFAULT_PERSONAS
 
     # Configure litellm to use Ollama
@@ -148,7 +147,7 @@ async def main():
     print("=" * 60)
     print(f"  Model : {args.model}")
     print(f"  Task  : {args.task!r}")
-    print(f"  Cost  : $0.00 (no cloud API calls)\n")
+    print("  Cost  : $0.00 (no cloud API calls)\n")
 
     engine = _build_engine(args.model)
     chain = await engine.run(args.task, tenant_id="local-llm-demo", persona_name="researcher")

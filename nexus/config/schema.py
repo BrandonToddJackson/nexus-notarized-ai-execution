@@ -4,7 +4,6 @@ These mirror nexus/types.py structures but accept string inputs
 (e.g., risk_level: "low") and coerce them to the correct enums.
 """
 
-from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 from nexus.types import RiskLevel, TrustTier

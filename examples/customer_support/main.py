@@ -57,7 +57,6 @@ def _build_engine():
     from nexus.knowledge.embeddings import EmbeddingService
     from nexus.knowledge.store import KnowledgeStore
     from nexus.knowledge.context import ContextBuilder
-    from nexus.tools.registry import ToolRegistry
     from nexus.tools.plugin import get_registered_tools
     import nexus.tools.builtin  # noqa: F401
     from nexus.tools.selector import ToolSelector

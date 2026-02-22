@@ -7,8 +7,7 @@ These modules were added post-Phase 14. This file provides exhaustive coverage:
 """
 
 import textwrap
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -586,7 +585,6 @@ class TestChainLockContextManager:
 
     async def test_concurrent_acquires_serialized(self):
         """Second acquire blocks until first releases (simulated via call order)."""
-        import asyncio
         from nexus.cache.locks import chain_lock
 
         call_log = []
@@ -653,7 +651,7 @@ class TestFindFile:
         assert result == explicit_file
 
     def test_raises_when_no_file_anywhere(self, tmp_path, monkeypatch):
-        from nexus.config.loader import _find_file, _DEFAULTS_DIR
+        from nexus.config.loader import _find_file
         monkeypatch.chdir(tmp_path)
         # Patch _DEFAULTS_DIR to an empty temp dir so defaults don't exist either
         with patch("nexus.config.loader._DEFAULTS_DIR", tmp_path):
@@ -940,7 +938,6 @@ class TestConfigLoaderIntegration:
 
     def test_loaded_tools_accepted_by_tool_registry(self, tmp_path):
         from nexus.config.loader import load_tools_yaml
-        from nexus.tools.registry import ToolRegistry
         content = textwrap.dedent("""\
             tools:
               - name: test_tool
@@ -950,7 +947,6 @@ class TestConfigLoaderIntegration:
         f = tmp_path / "tools.yaml"
         f.write_text(content)
         tools = load_tools_yaml(path=f)
-        registry = ToolRegistry()
         # ToolDefinition without an impl can't be registered (requires callable),
         # but we can verify the definition fields are valid
         assert tools[0].name == "test_tool"

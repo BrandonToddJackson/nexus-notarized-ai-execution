@@ -165,7 +165,7 @@ async def demo_successful_execution(engine) -> None:
 
     print(f"  Task   : {task!r}")
     print(f"  Tenant : {tenant!r}")
-    print(f"  Persona: researcher")
+    print("  Persona: researcher")
     print()
 
     try:
@@ -192,7 +192,7 @@ async def demo_successful_execution(engine) -> None:
     notary = Notary()
     try:
         notary.verify_chain(seals)
-        print(f"  Merkle chain: VALID")
+        print("  Merkle chain: VALID")
     except Exception as exc:
         print(f"  Merkle chain: COMPROMISED — {exc}")
     print()
@@ -223,15 +223,15 @@ async def demo_blocked_action(engine) -> None:
     tenant = "quickstart-demo"
 
     print(f"  Task   : {task!r}")
-    print(f"  Persona: kb_only  (allowed_tools: [web_search], resource_scopes: [kb:*])")
-    print(f"  Expected: BLOCKED — web_search targets web:* which is NOT in kb:*")
+    print("  Persona: kb_only  (allowed_tools: [web_search], resource_scopes: [kb:*])")
+    print("  Expected: BLOCKED — web_search targets web:* which is NOT in kb:*")
     print()
 
     try:
         await engine.run(task, tenant, persona_name="kb_only")
         print("  [UNEXPECTED] Action was not blocked — check anomaly gates!")
     except AnomalyDetected as exc:
-        print(f"  [CORRECTLY BLOCKED] Gate 1 (Scope) blocked the action:")
+        print("  [CORRECTLY BLOCKED] Gate 1 (Scope) blocked the action:")
         print(f"    {exc}")
     finally:
         # Clean up the demo persona

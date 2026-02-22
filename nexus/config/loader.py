@@ -13,8 +13,8 @@ from typing import Optional
 
 import yaml
 
-from nexus.config.schema import PersonasConfig, ToolsConfig, PersonaYAML, ToolYAML
-from nexus.types import PersonaContract, ToolDefinition, RiskLevel
+from nexus.config.schema import PersonasConfig, ToolsConfig
+from nexus.types import PersonaContract, ToolDefinition
 
 # Paths to bundled defaults
 _DEFAULTS_DIR = Path(__file__).parent / "defaults"

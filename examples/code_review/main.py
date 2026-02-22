@@ -107,7 +107,7 @@ async def main():
     print("  NEXUS — Code Review Example")
     print("=" * 60)
     print(f"  Target : {args.target_dir}")
-    print(f"  Persona: analyst (file_read + compute_stats)\n")
+    print("  Persona: analyst (file_read + compute_stats)\n")
 
     engine = _build_engine()
 

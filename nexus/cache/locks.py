@@ -15,7 +15,6 @@ Typical usage in a multi-worker route handler:
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Optional
 
 from nexus.cache.redis_client import RedisClient
 
