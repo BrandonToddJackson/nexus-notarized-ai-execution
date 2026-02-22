@@ -7,7 +7,7 @@ from nexus.tools.plugin import tool
 from nexus.types import RiskLevel
 
 
-@tool(name="web_search", description="Search the web for information", risk_level=RiskLevel.LOW)
+@tool(name="web_search", description="Search the web for information", risk_level=RiskLevel.LOW, resource_pattern="web:*")
 async def web_search(query: str) -> str:
     """Search the web for information.
 
@@ -21,7 +21,7 @@ async def web_search(query: str) -> str:
     return f"Search results for: {query}\n\n1. Result about {query} from example.com\n2. More info on {query} from docs.example.com"
 
 
-@tool(name="web_fetch", description="Fetch content from a URL", risk_level=RiskLevel.LOW)
+@tool(name="web_fetch", description="Fetch content from a URL", risk_level=RiskLevel.LOW, resource_pattern="web:*")
 async def web_fetch(url: str) -> str:
     """Fetch webpage content.
 
