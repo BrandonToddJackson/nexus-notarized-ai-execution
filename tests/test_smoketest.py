@@ -1591,3 +1591,22 @@ class TestPhase9AuthProtection:
         api_client.app.state.persona_manager = PersonaManager([])
         resp = api_client.get("/v1/personas", headers=auth_headers)
         assert resp.status_code == 200
+
+    def test_ledger_chain_detail_unknown_id_returns_404(self, api_client, auth_headers):
+        """GET /v1/ledger/{chain_id} with an unknown (or wrong-tenant) chain returns 404.
+
+        This enforces the tenant-isolation guarantee: existence of another tenant's
+        chain is never confirmed — the response is indistinguishable from not found.
+        """
+        from nexus.core.ledger import Ledger
+        api_client.app.state.ledger = Ledger()
+        resp = api_client.get("/v1/ledger/nonexistent-chain-id-xyz", headers=auth_headers)
+        assert resp.status_code == 404
+
+    def test_ledger_collection_with_no_seals_returns_200_empty(self, api_client, auth_headers):
+        """GET /v1/ledger (collection) returns 200 with empty list when tenant has no seals."""
+        from nexus.core.ledger import Ledger
+        api_client.app.state.ledger = Ledger()
+        resp = api_client.get("/v1/ledger", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["seals"] == []

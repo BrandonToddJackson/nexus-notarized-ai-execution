@@ -211,16 +211,40 @@ class TestLedgerEndpoint:
         resp = client_with_state.get("/v1/ledger?offset=-1", headers=auth_headers)
         assert resp.status_code == 422
 
-    def test_ledger_chain_endpoint_returns_200(self, client_with_state, auth_headers):
+    def test_ledger_chain_endpoint_unknown_returns_404(self, client_with_state, auth_headers):
+        """Unknown chain IDs return 404 — existence of another tenant's chain is not confirmed."""
         resp = client_with_state.get("/v1/ledger/nonexistent-chain", headers=auth_headers)
-        assert resp.status_code == 200  # empty seals, not 404
+        assert resp.status_code == 404
 
-    def test_ledger_chain_response_has_chain_id(self, client_with_state, auth_headers):
+    def test_ledger_chain_response_has_seals_when_found(self, client_with_state, auth_headers):
+        """Chain detail returns seals list when the chain exists for this tenant."""
+        from nexus.types import (
+            Seal, IntentDeclaration, AnomalyResult, GateResult, GateVerdict,
+            RiskLevel, ActionStatus,
+        )
+        import asyncio
+        intent = IntentDeclaration(
+            task_description="t", planned_action="p", tool_name="knowledge_search",
+            tool_params={}, resource_targets=[], reasoning="",
+        )
+        gate = GateResult(gate_name="scope", verdict=GateVerdict.PASS, score=1.0, threshold=1.0, details="")
+        anomaly = AnomalyResult(
+            gates=[gate, gate, gate, gate], overall_verdict=GateVerdict.PASS,
+            risk_level=RiskLevel.LOW, persona_id="researcher", action_fingerprint="fp",
+        )
+        seal = Seal(
+            chain_id="my-chain-001", step_index=0, tenant_id="demo",
+            persona_id="researcher", intent=intent, anomaly_result=anomaly,
+            tool_name="knowledge_search", tool_params={}, status=ActionStatus.EXECUTED,
+        )
+        asyncio.run(client_with_state.app.state.ledger.append(seal))
         resp = client_with_state.get("/v1/ledger/my-chain-001", headers=auth_headers)
+        assert resp.status_code == 200
         data = resp.json()
         assert data["chain_id"] == "my-chain-001"
         assert "seals" in data
         assert isinstance(data["seals"], list)
+        assert len(data["seals"]) == 1
 
     def test_ledger_empty_for_fresh_tenant(self, client_with_state, auth_headers):
         resp = client_with_state.get("/v1/ledger", headers=auth_headers)

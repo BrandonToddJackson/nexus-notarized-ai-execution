@@ -61,6 +61,38 @@ class NexusConfig(BaseSettings):
     port: int = 8000
     cors_origins: list[str] = ["http://localhost:5173"]  # Vite dev server
 
+    # ── Workflows ──
+    max_workflow_steps: int = 50
+    max_concurrent_workflows: int = 10
+    workflow_execution_timeout: int = 3600          # 1 hour max per workflow run
+
+    # ── Triggers ──
+    webhook_base_url: str = "http://localhost:8000"  # public base URL for webhook URLs
+    cron_check_interval: int = 15                    # seconds between cron checks
+    max_triggers_per_workflow: int = 5
+
+    # ── Credentials ──
+    credential_encryption_key: str = ""              # 32-byte Fernet key
+    credential_max_per_tenant: int = 100
+
+    # ── MCP ──
+    mcp_connection_timeout: int = 10                 # seconds
+    mcp_tool_timeout: int = 60                       # per-tool execution timeout
+    mcp_max_servers: int = 20                        # per tenant
+
+    # ── Code Sandbox ──
+    sandbox_max_memory_mb: int = 256
+    sandbox_max_execution_seconds: int = 30
+    sandbox_allowed_imports: list[str] = [
+        "json", "math", "re", "datetime", "collections",
+        "itertools", "functools", "hashlib", "base64",
+        "urllib.parse", "csv", "io",
+    ]
+
+    # ── Background Execution ──
+    worker_concurrency: int = 4
+    task_queue_url: str = "redis://localhost:6379/1"  # separate DB from cache
+
     model_config = {"env_prefix": "NEXUS_", "env_file": ".env", "extra": "ignore"}
 
 

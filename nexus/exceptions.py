@@ -65,14 +65,19 @@ class EscalationRequired(NexusError):
 # ── Phase 15: Workflow, Trigger, Credential, MCP Exceptions ─────────────────
 
 
-class WorkflowNotFound(NexusError):
+class WorkflowError(NexusError):
+    """Base exception for all workflow-related errors."""
+    pass
+
+
+class WorkflowNotFound(WorkflowError):
     """Requested workflow does not exist or is not accessible by this tenant."""
     def __init__(self, message: str, workflow_id: str = "", **kwargs):
         super().__init__(message, **kwargs)
         self.workflow_id = workflow_id
 
 
-class WorkflowValidationError(NexusError):
+class WorkflowValidationError(WorkflowError):
     """Workflow definition is structurally invalid (cycles, missing steps, etc.)."""
     def __init__(self, message: str, violations: list = None, **kwargs):
         super().__init__(message, **kwargs)
@@ -93,8 +98,23 @@ class CredentialError(NexusError):
         self.credential_id = credential_id
 
 
+class CredentialNotFound(CredentialError):
+    """Credential ID not found or does not belong to this tenant."""
+    pass
+
+
 class MCPConnectionError(NexusError):
     """MCP server connection or tool discovery failed."""
     def __init__(self, message: str, server_name: str = "", **kwargs):
         super().__init__(message, **kwargs)
         self.server_name = server_name
+
+
+class MCPToolError(ToolError):
+    """MCP tool execution failed."""
+    pass
+
+
+class SandboxError(ToolError):
+    """Code sandbox execution failed (memory limit, timeout, forbidden import)."""
+    pass

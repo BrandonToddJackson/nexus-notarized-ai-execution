@@ -183,7 +183,7 @@ nexus/
 ├── knowledge/      # Cognitive plane: embeddings, vector store, context
 ├── reasoning/      # Decision gates: think/act, continue/complete, escalate
 ├── tools/          # Execution: registry, sandbox, executor, built-ins
-├── db/             # Persistence: models, repository, migrations
+├── db/             # Persistence: ORM models (v1 + workflows/triggers/credentials/MCP), repository, migrations
 ├── llm/            # LLM integration via litellm + cost tracking
 ├── cache/          # Redis: fingerprint store, rate limiting, distributed locks
 ├── auth/           # JWT, middleware, rate limiter
@@ -195,7 +195,7 @@ frontend/           # React dashboard (Vite, port 5173) — 17 source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (590 tests)
+tests/              # pytest suite (657 tests, 17 files)
 ```
 
 ## CLI
@@ -246,7 +246,7 @@ NEXUS is designed for production agentic workloads. Security hardening applied a
 **Authentication & Authorization**
 - JWT HS256 with minimum 32-byte key enforcement (RFC 7518 §3.2)
 - API keys hashed with SHA-256 before storage — plaintext never persisted
-- All routes tenant-scoped; cross-tenant access returns 403, not 404
+- All queries scoped to `tenant_id` at the ORM level — another tenant's data is never returned; requests for another tenant's chain return 404 (existence not confirmed), collection endpoints return empty lists
 - Demo fallback (`nxs_demo_key_12345`) disabled when `NEXUS_ENV=production`
 
 **Prompt Injection Defense**
@@ -261,7 +261,7 @@ NEXUS is designed for production agentic workloads. Security hardening applied a
 - Redis keys namespaced and sanitized — persona IDs stripped of non-alphanumeric chars
 
 **Infrastructure**
-- Redis pinned to `7.4-alpine` (CVE-2025-49844 / "RediShell" CVSS 10.0 mitigated); port not exposed externally
+- Redis pinned to `7.4-alpine` (mitigates CVE-2025-49844 Lua RCE present in unversioned `7-alpine`); port not exposed externally
 - LLM calls wrapped in 30-second timeout — runaway generation blocked
 - In-memory ledger capped at 10,000 seals — OOM via audit trail eliminated
 
@@ -287,6 +287,49 @@ NEXUS_REDIS_URL=redis://localhost:6379/0
 NEXUS_DEFAULT_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 NEXUS_ENV=production                        # Disables demo key fallback
 ```
+
+**v2 additions — set before using workflow, credential, or MCP features (Phase 15+):**
+
+```bash
+# Credential vault
+NEXUS_CREDENTIAL_ENCRYPTION_KEY=<fernet-key>    # Fernet key required in Phase 18+ (cryptography.fernet.Fernet.generate_key())
+
+# Triggers
+NEXUS_WEBHOOK_BASE_URL=https://yourdomain.com   # Public base URL registered with incoming webhook URLs
+NEXUS_CRON_CHECK_INTERVAL=15                    # Seconds between cron schedule evaluations
+
+# Background execution
+NEXUS_TASK_QUEUE_URL=redis://localhost:6379/1   # Separate Redis DB from the fingerprint cache (/0)
+NEXUS_WORKER_CONCURRENCY=4                      # Parallel background workflow workers
+
+# Code sandbox
+NEXUS_SANDBOX_MAX_MEMORY_MB=256
+NEXUS_SANDBOX_MAX_EXECUTION_SECONDS=30
+
+# MCP
+NEXUS_MCP_CONNECTION_TIMEOUT=10                 # Seconds before MCP server connection attempt fails
+NEXUS_MCP_TOOL_TIMEOUT=60                       # Per-tool execution timeout
+```
+
+## v2 Roadmap — AI Automation Platform
+
+NEXUS v2 transforms the single-shot agent framework into a **persistent, trigger-driven automation platform** — every workflow still passes through all 4 anomaly gates and is sealed in the ledger.
+
+| Phase | Feature | Status |
+|-------|---------|--------|
+| 15 | Foundation v2 — exception hierarchy, config fields, ORM models | ✅ Done |
+| 16 | Workflow DAG Definition — step types, branching, loops, versioning | 🔲 Planned |
+| 17 | DAG Execution Engine — parallel steps, branch, retry, resume | 🔲 Planned |
+| 18 | Credential Vault — Fernet-encrypted secrets, OAuth2, runtime injection | 🔲 Planned |
+| 19 | MCP Integration — Model Context Protocol client + tool adapter | 🔲 Planned |
+| 20 | Universal HTTP Tool — REST caller with auth injection + response mapping | 🔲 Planned |
+| 21 | Code Sandbox v2 — Python/JS with pip/npm, memory/CPU hard limits | 🔲 Planned |
+| 22 | Trigger System — webhooks, cron scheduler, event bus | 🔲 Planned |
+| 23 | NL Workflow Generation — natural language → DAG via LLM | 🔲 Planned |
+| 24 | Visual Canvas — React Flow drag-and-drop workflow editor | 🔲 Planned |
+| 25–32 | Frontend v2, background workers, plugin marketplace, Alembic v2 migrations, docs | 🔲 Planned |
+
+See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.
 
 ## Contributing
 

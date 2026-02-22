@@ -1,6 +1,6 @@
 """GET /v1/ledger — Audit trail queries."""
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, HTTPException, Request, Query
 
 router = APIRouter(tags=["ledger"])
 
@@ -54,6 +54,8 @@ async def get_chain_seals(request: Request, chain_id: str):
     ledger = request.app.state.ledger
     tenant_id = getattr(request.state, "tenant_id", "demo")
     seals = await ledger.get_chain(chain_id, tenant_id=tenant_id)
+    if not seals:
+        raise HTTPException(status_code=404, detail="Chain not found")
     return {
         "chain_id": chain_id,
         "seals": [_seal_to_dict(s) for s in seals],

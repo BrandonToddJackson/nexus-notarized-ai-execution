@@ -4,7 +4,7 @@ Tables: tenants, personas, seals, chains, costs, knowledge_docs
 All tables have tenant_id for isolation. Indexes on common query patterns.
 """
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, JSON, Boolean, Text, ForeignKey, Index
+from sqlalchemy import Column, String, Integer, Float, DateTime, JSON, Boolean, Text, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase
 from datetime import datetime
 import uuid
@@ -127,7 +127,10 @@ class WorkflowModel(Base):
     tags = Column(JSON, default=list)
     settings = Column(JSON, default=dict)
 
-    __table_args__ = (Index("ix_workflow_tenant_name", "tenant_id", "name"),)
+    __table_args__ = (
+        Index("ix_workflow_tenant_status", "tenant_id", "status"),
+        UniqueConstraint("tenant_id", "name", "version", name="uq_workflow_tenant_name_version"),
+    )
 
 
 class WorkflowExecutionModel(Base):
@@ -145,19 +148,25 @@ class WorkflowExecutionModel(Base):
     error = Column(Text, nullable=True)
     step_results = Column(JSON, default=dict)
 
-    __table_args__ = (Index("ix_wf_exec_tenant_workflow", "tenant_id", "workflow_id"),)
+    __table_args__ = (Index("ix_wf_exec_tenant_workflow_started", "tenant_id", "workflow_id", "started_at"),)
 
 
-class TriggerConfigModel(Base):
-    __tablename__ = "trigger_configs"
+class TriggerModel(Base):
+    __tablename__ = "triggers"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     workflow_id = Column(String, ForeignKey("workflows.id"), nullable=False, index=True)
     tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
     trigger_type = Column(String, nullable=False)   # TriggerType value
     enabled = Column(Boolean, default=True)
     config = Column(JSON, default=dict)
+    webhook_path = Column(String, nullable=True, unique=True)
     last_triggered_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_trigger_tenant_enabled", "tenant_id", "enabled"),
+        Index("ix_trigger_webhook_path", "webhook_path"),
+    )
 
 
 class CredentialModel(Base):
@@ -173,7 +182,10 @@ class CredentialModel(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)
 
-    __table_args__ = (Index("ix_credential_tenant_name", "tenant_id", "name", unique=True),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_credential_tenant_name"),
+        Index("ix_credential_tenant_service", "tenant_id", "service_name"),
+    )
 
 
 class MCPServerModel(Base):
@@ -189,5 +201,9 @@ class MCPServerModel(Base):
     enabled = Column(Boolean, default=True)
     discovered_tools = Column(JSON, default=list)
     last_connected_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-    __table_args__ = (Index("ix_mcp_tenant_name", "tenant_id", "name", unique=True),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_mcp_tenant_name"),
+        Index("ix_mcp_tenant_enabled", "tenant_id", "enabled"),
+    )
