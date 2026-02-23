@@ -8,7 +8,7 @@ Covers:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from cryptography.fernet import Fernet
@@ -144,7 +144,7 @@ class TestVaultStore:
         assert internal.scoped_personas == ["researcher"]
 
     def test_store_with_expiry(self, vault):
-        expires = datetime.utcnow() + timedelta(hours=1)
+        expires = datetime.now(tz=timezone.utc) + timedelta(hours=1)
         rec = vault.store(
             tenant_id="t1",
             name="Expiring",
@@ -188,7 +188,7 @@ class TestVaultRetrieve:
             vault.retrieve("nonexistent-id", "t1")
 
     def test_retrieve_expired_raises_credential_error(self, vault):
-        expires = datetime.utcnow() - timedelta(seconds=1)
+        expires = datetime.now(tz=timezone.utc) - timedelta(seconds=1)
         rec = vault.store(
             tenant_id="t1", name="Expired", credential_type=CredentialType.API_KEY,
             service_name="x", data={"api_key": "k"}, expires_at=expires,

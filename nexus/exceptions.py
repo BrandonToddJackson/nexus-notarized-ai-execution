@@ -84,6 +84,10 @@ class WorkflowValidationError(WorkflowError):
         self.violations = violations or []
 
 
+class WorkflowGenerationError(WorkflowError):
+    """Raised when the WorkflowGenerator cannot produce a valid workflow from LLM output."""
+
+
 class TriggerError(NexusError):
     """A workflow trigger failed to fire or configure."""
     def __init__(self, message: str, trigger_type: str = "", **kwargs):

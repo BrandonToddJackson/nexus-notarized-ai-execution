@@ -8,7 +8,7 @@ the record so that secrets never appear in the audit trail.
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -132,7 +132,7 @@ class CredentialVault:
                 credential_id=credential_id,
             )
 
-        if record.expires_at and record.expires_at < datetime.utcnow():
+        if record.expires_at and record.expires_at < datetime.now(tz=timezone.utc):
             raise CredentialError(
                 f"Credential '{credential_id}' expired at {record.expires_at.isoformat()}",
                 credential_id=credential_id,
@@ -161,7 +161,7 @@ class CredentialVault:
             )
 
         encrypted = self._enc.encrypt(json.dumps(data))
-        updated = record.model_copy(update={"encrypted_data": encrypted, "updated_at": datetime.utcnow()})
+        updated = record.model_copy(update={"encrypted_data": encrypted, "updated_at": datetime.now(tz=timezone.utc)})
         self._store[credential_id] = updated
         return updated.model_copy(update={"encrypted_data": ""})
 
@@ -370,7 +370,7 @@ class CredentialVault:
         # Apply expires_at from expires_in if provided
         if "expires_in" in token_data:
             record = self._store[credential_id]  # guaranteed to exist after update()
-            new_expires = datetime.utcnow() + timedelta(seconds=int(token_data["expires_in"]))
+            new_expires = datetime.now(tz=timezone.utc) + timedelta(seconds=int(token_data["expires_in"]))
             self._store[credential_id] = record.model_copy(update={"expires_at": new_expires})
             return self._store[credential_id].model_copy(update={"encrypted_data": ""})
 

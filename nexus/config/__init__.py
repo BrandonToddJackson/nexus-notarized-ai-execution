@@ -118,6 +118,10 @@ class NexusConfig(BaseSettings):
     worker_concurrency: int = 4
     task_queue_url: str = "redis://localhost:6379/1"  # separate DB from cache
 
+    # ── Workflow Generation ──
+    max_generation_refine_attempts: int = 3
+    workflow_generation_model: Optional[str] = None
+
     model_config = {"env_prefix": "NEXUS_", "env_file": ".env", "extra": "ignore"}
 
 

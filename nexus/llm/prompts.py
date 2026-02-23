@@ -60,3 +60,88 @@ Respond with JSON:
   "reasoning": "why this tool"
 }}
 """
+
+GENERATE_WORKFLOW = """You are a workflow architect for the NEXUS AI agent framework.
+Generate a complete WorkflowDefinition JSON from the user's natural-language description.
+
+Available tools: {tool_context}
+Available personas: {persona_context}
+
+The JSON MUST have exactly these top-level keys:
+  "name"        – short workflow name (string)
+  "description" – one-sentence description (string)
+  "steps"       – array of step objects (see schema below)
+  "edges"       – array of edge objects (see schema below)
+  "trigger"     – optional trigger config dict (omit or set to null for manual)
+  "settings"    – optional dict of workflow settings
+  "tags"        – optional array of string tags
+
+Step schema:
+{{
+  "id":           "unique_step_id",
+  "workflow_id":  "",
+  "step_type":    "action|branch|loop|parallel|sub_workflow|wait|human_approval",
+  "name":         "Human-readable step name",
+  "description":  "What this step does",
+  "tool_name":    "tool_name_or_null",
+  "tool_params":  {{}},
+  "persona_name": "researcher",
+  "position":     {{"x": 0.0, "y": 0.0}},
+  "config":       {{}},
+  "timeout_seconds": 30
+}}
+
+Edge schema:
+{{
+  "id":             "unique_edge_id",
+  "workflow_id":    "",
+  "source_step_id": "source_step_id",
+  "target_step_id": "target_step_id",
+  "edge_type":      "default|conditional|error|loop_back",
+  "condition":      null
+}}
+
+Rules:
+- Every step MUST have a unique id
+- Every edge source_step_id and target_step_id MUST match an existing step id
+- action steps MUST have either tool_name or persona_name set
+- branch steps MUST have config.conditions (list of condition strings)
+- loop steps MUST have config.iterator set
+- sub_workflow steps MUST have config.sub_workflow_id set
+- wait steps MUST have config.seconds > 0
+- human_approval steps MUST have config.message set
+- The graph MUST be a valid DAG (no cycles, except loop_back edges)
+- Respond with ONLY the JSON object — no prose, no markdown fences
+"""
+
+REFINE_WORKFLOW = """You are a workflow architect for the NEXUS AI agent framework.
+Refine an existing workflow based on user feedback.
+
+Current workflow JSON:
+{current_workflow_json}
+
+User feedback: {feedback}
+
+Available tools: {tool_context}
+Available personas: {persona_context}
+
+Apply the feedback and return the complete updated WorkflowDefinition JSON.
+Use the same schema as the original. Preserve step IDs where possible.
+Respond with ONLY the JSON object — no prose, no markdown fences.
+"""
+
+EXPLAIN_WORKFLOW = """You are a workflow architect for the NEXUS AI agent framework.
+Explain the following workflow in clear, plain English.
+
+Workflow JSON:
+{workflow_json}
+
+Write a thorough explanation covering:
+1. Overall purpose and what problem it solves
+2. Step-by-step walkthrough of each step and its role
+3. Decision points (branch/loop/parallel steps) and their logic
+4. Personas and tools used and why
+5. Any notable design choices or potential improvements
+
+Write in clear paragraphs. No JSON output.
+"""

@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
-from nexus.exceptions import TriggerError, WorkflowNotFound
+from nexus.exceptions import TriggerError
 from nexus.types import TriggerConfig, TriggerType, WorkflowExecution
 
 logger = logging.getLogger(__name__)
