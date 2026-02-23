@@ -5,9 +5,12 @@ Collections are named '{tenant_id}_{namespace}' for tenant isolation.
 """
 
 import asyncio
+import logging
 from typing import Callable
 
 from nexus.types import KnowledgeDocument, RetrievedContext
+
+logger = logging.getLogger(__name__)
 
 # Access-level ordering: lower rank = less restricted
 _ACCESS_RANKS = {"public": 0, "internal": 1, "restricted": 2, "confidential": 3}
@@ -128,7 +131,8 @@ class KnowledgeStore:
         """
         try:
             collection = await asyncio.to_thread(self._get_collection, tenant_id, namespace)
-        except Exception:
+        except Exception as exc:
+            logger.warning("[KnowledgeStore] Failed to get collection %s/%s: %s", tenant_id, namespace, exc)
             return RetrievedContext(
                 query=query, documents=[], confidence=0.0,
                 sources=[], namespace=namespace,
@@ -159,12 +163,14 @@ class KnowledgeStore:
 
         try:
             results = await asyncio.to_thread(lambda: collection.query(**query_kwargs))
-        except Exception:
+        except Exception as exc:
             # where-filter may fail if no documents match; fall back without filter
+            logger.debug("[KnowledgeStore] Filtered query failed (%s), retrying without filter", exc)
             query_kwargs.pop("where", None)
             try:
                 results = await asyncio.to_thread(lambda: collection.query(**query_kwargs))
-            except Exception:
+            except Exception as exc2:
+                logger.warning("[KnowledgeStore] ChromaDB query failed for %s/%s: %s", tenant_id, namespace, exc2)
                 return RetrievedContext(
                     query=query, documents=[], confidence=0.0,
                     sources=[], namespace=namespace,
@@ -231,7 +237,8 @@ class KnowledgeStore:
         namespaces = []
         try:
             collections = client.list_collections()
-        except Exception:
+        except Exception as exc:
+            logger.warning("[KnowledgeStore] list_collections failed for tenant %s: %s", tenant_id, exc)
             return []
         for col in collections:
             # col may be a Collection object or a string depending on chromadb version

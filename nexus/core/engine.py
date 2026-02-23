@@ -37,6 +37,7 @@ from nexus.knowledge.context import ContextBuilder
 from nexus.tools.registry import ToolRegistry
 from nexus.tools.selector import ToolSelector
 from nexus.tools.executor import ToolExecutor
+from nexus.credentials.vault import sanitize_tool_params
 from nexus.reasoning.think_act import ThinkActGate
 from nexus.reasoning.continue_complete import ContinueCompleteGate
 from nexus.reasoning.escalate import EscalateGate
@@ -283,12 +284,16 @@ class NexusEngine:
                     )
 
                 # ── f. CREATE SEAL (PENDING) ───────────────────────────────────
+                # Sanitize tool_params before sealing so secrets never enter the ledger.
+                sealed_intent = intent.model_copy(
+                    update={"tool_params": sanitize_tool_params(intent.tool_params)}
+                )
                 seal = self.notary.create_seal(
                     chain_id=chain.id,
                     step_index=step_index,
                     tenant_id=tenant_id,
                     persona_id=step_persona_name,
-                    intent=intent,
+                    intent=sealed_intent,
                     anomaly_result=anomaly_result,
                 )
 
@@ -332,7 +337,9 @@ class NexusEngine:
 
                 # ── h+i. VERIFY + EXECUTE (executor handles both) ─────────────
                 self.cot_logger.log(cot_key, f"Executing tool '{intent.tool_name}'")
-                result, error_str = await self.tool_executor.execute(intent)
+                result, error_str = await self.tool_executor.execute(
+                    intent, tenant_id=tenant_id, persona_name=step_persona_name
+                )
 
                 # ── j. VALIDATE OUTPUT ────────────────────────────────────────
                 is_valid, validation_reason = await self.output_validator.validate(intent, result)
@@ -1007,13 +1014,16 @@ class NexusEngine:
                 tenant_id=tenant_id,
             )
 
-            # Create PENDING seal
+            # Create PENDING seal — sanitize tool_params so secrets never enter the ledger
+            sealed_intent = intent.model_copy(
+                update={"tool_params": sanitize_tool_params(intent.tool_params)}
+            )
             seal = self.notary.create_seal(
                 chain_id=chain.id,
                 step_index=step_index,
                 tenant_id=tenant_id,
                 persona_id=step_persona_name,
-                intent=intent,
+                intent=sealed_intent,
                 anomaly_result=anomaly_result,
             )
 
@@ -1052,7 +1062,9 @@ class NexusEngine:
 
             # Execute tool
             self.cot_logger.log(cot_key, f"[wf] Executing tool '{intent.tool_name}'")
-            result, error_str = await self.tool_executor.execute(intent)
+            result, error_str = await self.tool_executor.execute(
+                intent, tenant_id=tenant_id, persona_name=step_persona_name
+            )
 
             # Validate output
             is_valid, validation_reason = await self.output_validator.validate(intent, result)
@@ -1252,8 +1264,6 @@ class NexusEngine:
           ``asyncio.gather`` and collects their results.
           ``step.config.get("fail_fast", True)`` controls error behaviour.
         """
-        from nexus.workflows.dag import get_children
-
         branch_ids: list[str] = list(step.config.get("branches", []))
 
         if not branch_ids:

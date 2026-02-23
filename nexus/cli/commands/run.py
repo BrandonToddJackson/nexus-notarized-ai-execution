@@ -103,9 +103,14 @@ def _build_in_memory_engine():
     for _name, (definition, impl) in get_registered_tools().items():
         tool_registry.register(definition, impl)
 
+    from nexus.credentials.encryption import CredentialEncryption
+    from nexus.credentials.vault import CredentialVault
+    credential_encryption = CredentialEncryption(key=cfg.credential_encryption_key)
+    vault = CredentialVault(encryption=credential_encryption)
+
     tool_selector = ToolSelector(registry=tool_registry)
     sandbox = Sandbox()
-    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier)
+    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier, vault=vault)
 
     return NexusEngine(
         persona_manager=persona_manager,

@@ -5,8 +5,12 @@ Falls back to rule-based matching when LLM is unavailable.
 """
 
 
+import logging
+
 from nexus.types import PersonaContract, RetrievedContext, IntentDeclaration
 from nexus.tools.registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class ToolSelector:
@@ -106,15 +110,15 @@ class ToolSelector:
             tool_defn = next((t for t in available if t.name == tool_name), available[0])
             return IntentDeclaration(
                 task_description=task,
-                planned_action=f"Execute {tool_name}: {task}",
+                planned_action=self._natural_planned_action(tool_name, task),
                 tool_name=tool_name,
                 tool_params=params,
                 resource_targets=self._derive_resource_targets(tool_defn, params),
                 reasoning=reasoning,
                 confidence=0.8,
             )
-        except Exception:
-            # LLM failed — fall back to rule-based
+        except Exception as exc:
+            logger.warning("[Selector] LLM selection failed (%s: %s) — falling back to rule-based", type(exc).__name__, exc)
             return self._select_rule_based(task, persona, context, available)
 
     def _select_rule_based(

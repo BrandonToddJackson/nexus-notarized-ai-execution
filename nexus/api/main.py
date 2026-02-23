@@ -127,7 +127,12 @@ async def lifespan(app: FastAPI):
     context_builder = ContextBuilder(knowledge_store=knowledge_store)
     tool_selector = ToolSelector(registry=tool_registry)
     sandbox = Sandbox()
-    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier)
+    from nexus.credentials.encryption import CredentialEncryption
+    from nexus.credentials.vault import CredentialVault
+    credential_encryption = CredentialEncryption(key=config.credential_encryption_key)
+    vault = CredentialVault(encryption=credential_encryption)
+    app.state.vault = vault
+    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier, vault=vault)
     think_act_gate = ThinkActGate()
     continue_complete_gate = ContinueCompleteGate()
     escalate_gate = EscalateGate()
