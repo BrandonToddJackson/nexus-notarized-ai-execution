@@ -13,7 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable
 
 from nexus.exceptions import MCPConnectionError
-from nexus.mcp.client import MCPClient, make_tool_name
+from nexus.mcp.client import MCPClient
 from nexus.types import MCPServerConfig, ToolDefinition
 from nexus.tools.registry import ToolRegistry
 
@@ -91,8 +91,6 @@ class MCPToolAdapter:
         # Register each tool in the NEXUS registry
         registered: list[str] = []
         for defn in definitions:
-            server_name = server_config.name
-
             # Build a closure capturing the correct server_id + tool name
             impl = self._make_tool_impl(server_id, defn.name)
             self._registry.register(defn, impl, source="mcp")

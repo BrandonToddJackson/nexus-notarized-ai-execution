@@ -338,6 +338,262 @@ class CodeSandbox:
         # 10. Format output
         return _format_output(stdout_str, stderr_str, exit_code, truncated, output_format)
 
+    # ──────────────────────────────────────────────────────────────────────
+    # TypeScript
+    # ──────────────────────────────────────────────────────────────────────
+
+    async def execute_typescript(
+        self,
+        code: str,
+        stdin: str = "",
+        timeout: int | None = None,
+        input_data: object = None,
+        packages: list[str] | None = None,
+        environment_variables: dict[str, str] | None = None,
+        allow_network: bool = False,
+        tsconfig: dict | None = None,
+        output_format: str = "auto",
+        max_output_kb: int = 1024,
+    ) -> dict:
+        config = self._config
+
+        # 1. Create temp dir
+        sandbox_dir = Path(f"/tmp/nexus_sandbox_{uuid4().hex}/")
+        sandbox_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # 2. Resolve tsx binary + optional user packages
+            #
+            # tsx is the TypeScript interpreter — treat it like Python's binary, not user code.
+            # Three resolution strategies (in priority order):
+            #
+            #   A) npm install disabled → use global tsx binary (fastest; requires npm install -g tsx)
+            #   B) npm install enabled + cache_dir set → install tsx+typescript ONCE to cache_dir,
+            #      reuse on every subsequent call; user packages still isolated to sandbox_dir
+            #   C) npm install enabled, no cache → install tsx+typescript+user_packages per-execution
+            #      into sandbox_dir (most isolated, slowest)
+
+            extra_node_path: str | None = None  # set to cache_dir/node_modules when B is used
+
+            if not config.sandbox_allow_npm_install:
+                # Strategy A: global tsx
+                check = await asyncio.create_subprocess_exec(
+                    config.sandbox_tsx_global_path, "--version",
+                    stdout=PIPE, stderr=PIPE,
+                )
+                await check.communicate()
+                if check.returncode != 0:
+                    raise SandboxError(
+                        "tsx is not globally installed and sandbox_allow_npm_install=False. "
+                        "Either enable npm install or install tsx globally: npm install -g tsx"
+                    )
+                tsx_bin = config.sandbox_tsx_global_path
+                # Install user packages into sandbox_dir if requested
+                if packages:
+                    (sandbox_dir / "package.json").write_text(
+                        json.dumps({"type": "module", "dependencies": {}})
+                    )
+                    npm_proc = await asyncio.create_subprocess_exec(
+                        "npm", "install",
+                        "--prefix", str(sandbox_dir),
+                        "--quiet", "--no-audit", "--no-fund",
+                        *packages,
+                        stdout=PIPE, stderr=PIPE,
+                        cwd=str(sandbox_dir),
+                    )
+                    try:
+                        _, npm_err = await asyncio.wait_for(
+                            npm_proc.communicate(),
+                            timeout=config.sandbox_ts_install_timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        npm_proc.kill()
+                        raise SandboxError("npm install timed out for user packages")
+                    if npm_proc.returncode != 0:
+                        raise SandboxError(
+                            f"npm install failed: {npm_err.decode(errors='replace').strip()[:500]}"
+                        )
+
+            elif config.sandbox_ts_cache_dir:
+                # Strategy B: cached tsx runtime + per-execution user packages
+                cache_dir = Path(config.sandbox_ts_cache_dir)
+                tsx_cached = cache_dir / "node_modules" / ".bin" / "tsx"
+                if not tsx_cached.exists():
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                    (cache_dir / "package.json").write_text(
+                        json.dumps({"type": "module", "dependencies": {}})
+                    )
+                    npm_proc = await asyncio.create_subprocess_exec(
+                        "npm", "install",
+                        "--prefix", str(cache_dir),
+                        "--quiet", "--no-audit", "--no-fund",
+                        "tsx", "typescript",
+                        stdout=PIPE, stderr=PIPE,
+                        cwd=str(cache_dir),
+                    )
+                    try:
+                        _, npm_err = await asyncio.wait_for(
+                            npm_proc.communicate(),
+                            timeout=config.sandbox_ts_install_timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        npm_proc.kill()
+                        raise SandboxError("npm install timed out for TypeScript cache")
+                    if npm_proc.returncode != 0:
+                        raise SandboxError(
+                            f"npm install failed: {npm_err.decode(errors='replace').strip()[:500]}"
+                        )
+                tsx_bin = str(tsx_cached)
+                extra_node_path = str(cache_dir / "node_modules")
+                # User packages go into isolated sandbox_dir
+                if packages:
+                    (sandbox_dir / "package.json").write_text(
+                        json.dumps({"type": "module", "dependencies": {}})
+                    )
+                    npm_proc = await asyncio.create_subprocess_exec(
+                        "npm", "install",
+                        "--prefix", str(sandbox_dir),
+                        "--quiet", "--no-audit", "--no-fund",
+                        *packages,
+                        stdout=PIPE, stderr=PIPE,
+                        cwd=str(sandbox_dir),
+                    )
+                    try:
+                        _, npm_err = await asyncio.wait_for(
+                            npm_proc.communicate(),
+                            timeout=config.sandbox_ts_install_timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        npm_proc.kill()
+                        raise SandboxError("npm install timed out for user packages")
+                    if npm_proc.returncode != 0:
+                        raise SandboxError(
+                            f"npm install failed: {npm_err.decode(errors='replace').strip()[:500]}"
+                        )
+
+            else:
+                # Strategy C: per-execution install of tsx+typescript+user_packages
+                all_packages = ["tsx", "typescript"] + (packages or [])
+                (sandbox_dir / "package.json").write_text(
+                    json.dumps({"type": "module", "dependencies": {}})
+                )
+                npm_proc = await asyncio.create_subprocess_exec(
+                    "npm", "install",
+                    "--prefix", str(sandbox_dir),
+                    "--quiet", "--no-audit", "--no-fund",
+                    *all_packages,
+                    stdout=PIPE, stderr=PIPE,
+                    cwd=str(sandbox_dir),
+                )
+                try:
+                    _, npm_err = await asyncio.wait_for(
+                        npm_proc.communicate(),
+                        timeout=config.sandbox_ts_install_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    npm_proc.kill()
+                    raise SandboxError("npm install timed out for TypeScript sandbox")
+                if npm_proc.returncode != 0:
+                    raise SandboxError(
+                        f"npm install failed: {npm_err.decode(errors='replace').strip()[:500]}"
+                    )
+                tsx_bin = str(sandbox_dir / "node_modules" / ".bin" / "tsx")
+
+            # 3. Write tsconfig.json
+            default_tsconfig: dict = {
+                "compilerOptions": {
+                    "target": config.sandbox_ts_default_target,
+                    "module": "ESNext",
+                    "moduleResolution": "bundler",
+                    "strict": True,
+                    "esModuleInterop": True,
+                    "skipLibCheck": True,
+                    "outDir": "./dist",
+                }
+            }
+            if tsconfig:
+                default_tsconfig["compilerOptions"].update(
+                    tsconfig.get("compilerOptions", {})
+                )
+            (sandbox_dir / "tsconfig.json").write_text(json.dumps(default_tsconfig))
+
+            # 4. Write script
+            code_file = sandbox_dir / "script.ts"
+            code_file.write_text(code, encoding="utf-8")
+
+            # 5. Build env dict
+            import os
+            sandbox_bins = str(sandbox_dir / "node_modules" / ".bin")
+            sandbox_modules = str(sandbox_dir / "node_modules")
+            if extra_node_path:
+                # extra_node_path is cache_dir/node_modules
+                cache_bins = str(Path(extra_node_path) / ".bin")
+                path_val = f"{sandbox_bins}:{cache_bins}:{os.environ.get('PATH', '/usr/bin:/usr/local/bin')}"
+                node_path_val = f"{sandbox_modules}:{extra_node_path}"
+            else:
+                path_val = f"{sandbox_bins}:{os.environ.get('PATH', '/usr/bin:/usr/local/bin')}"
+                node_path_val = sandbox_modules
+            env: dict[str, str] = {
+                "PATH": path_val,
+                "HOME": "/tmp",
+                "NODE_PATH": node_path_val,
+                "TSX_TSCONFIG_PATH": str(sandbox_dir / "tsconfig.json"),
+            }
+            if input_data is not None:
+                env["NEXUS_INPUT"] = json.dumps(input_data)
+            if not allow_network:
+                proxy = "http://127.0.0.1:0"
+                env["http_proxy"] = proxy
+                env["https_proxy"] = proxy
+                env["HTTP_PROXY"] = proxy
+                env["HTTPS_PROXY"] = proxy
+            if environment_variables:
+                for k, v in environment_variables.items():
+                    if not k.startswith("NEXUS_"):
+                        env[k] = str(v)
+
+            # 6. Execute
+            # tsx is a wrapper script that spawns a child `node` process.
+            # Use os.setsid() so the entire process group can be killed on timeout —
+            # proc.kill() alone only kills the tsx wrapper, leaving the node child running.
+            import os as _os
+            proc = await asyncio.create_subprocess_exec(
+                tsx_bin, str(code_file),
+                stdin=PIPE, stdout=PIPE, stderr=PIPE,
+                env=env, cwd=str(sandbox_dir),
+                preexec_fn=_os.setsid,
+            )
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    proc.communicate(input=stdin.encode("utf-8") if stdin else b""),
+                    timeout=timeout or config.sandbox_max_execution_seconds,
+                )
+            except asyncio.TimeoutError:
+                try:
+                    _os.killpg(_os.getpgid(proc.pid), 9)  # SIGKILL entire process group
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
+                try:
+                    await asyncio.wait_for(proc.communicate(), timeout=2)
+                except (asyncio.TimeoutError, Exception):
+                    pass
+                raise SandboxError(
+                    f"TypeScript execution timed out after "
+                    f"{timeout or config.sandbox_max_execution_seconds}s"
+                )
+
+        finally:
+            shutil.rmtree(sandbox_dir, ignore_errors=True)
+
+        # 7. Truncate + format output
+        max_bytes = (max_output_kb or config.sandbox_max_output_kb) * 1024
+        truncated = len(stdout_bytes) > max_bytes
+        stdout_str = stdout_bytes[:max_bytes].decode(errors="replace")
+        stderr_str = stderr_bytes.decode(errors="replace")
+        exit_code = proc.returncode if proc.returncode is not None else -1
+
+        return _format_output(stdout_str, stderr_str, exit_code, truncated, output_format)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -411,6 +667,7 @@ sandbox = CodeSandbox(_default_config)
 
 code_execute_python = sandbox.execute_python
 code_execute_javascript = sandbox.execute_javascript
+code_execute_typescript = sandbox.execute_typescript
 
 _PYTHON_SCHEMA = {
     "type": "object",
@@ -475,6 +732,60 @@ _JS_SCHEMA = {
     },
     "required": ["code"],
 }
+
+_TS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "code": {"type": "string", "description": "TypeScript source code to execute"},
+        "stdin": {"type": "string", "description": "Text to pass as stdin"},
+        "timeout": {"type": "integer", "description": "Execution timeout in seconds"},
+        "input_data": {"description": "JSON-serialisable data injected as NEXUS_INPUT env var"},
+        "packages": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "npm packages to install in addition to tsx+typescript (requires "
+                "sandbox_allow_npm_install=true). E.g. ['@modelcontextprotocol/sdk', 'zod']"
+            ),
+        },
+        "environment_variables": {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "description": "Extra environment variables (NEXUS_* keys are ignored)",
+        },
+        "allow_network": {"type": "boolean", "description": "Allow outbound network access"},
+        "tsconfig": {
+            "type": "object",
+            "description": "Inline tsconfig overrides (merged into default compilerOptions)",
+        },
+        "output_format": {
+            "type": "string",
+            "enum": ["auto", "json", "text"],
+            "description": "How to parse stdout: auto tries JSON, text returns raw",
+        },
+        "max_output_kb": {"type": "integer", "description": "Max stdout bytes (KB) before truncation"},
+    },
+    "required": ["code"],
+}
+
+_registered_tools["code_execute_typescript"] = (
+    ToolDefinition(
+        name="code_execute_typescript",
+        description=(
+            "Execute TypeScript code in an isolated sandbox using tsx. "
+            "Supports full TypeScript syntax, ESM imports, and npm packages. "
+            "tsx and typescript are always installed implicitly. "
+            "Input data available via: const input = JSON.parse(process.env.NEXUS_INPUT ?? 'null'). "
+            "For structured return values, use console.log(JSON.stringify(result)) with output_format='json'. "
+            "For Next.js MCP scaffolding, include packages=['next', '@modelcontextprotocol/sdk', 'zod']."
+        ),
+        parameters=_TS_SCHEMA,
+        risk_level=RiskLevel.MEDIUM,
+        resource_pattern="code:*",
+        timeout_seconds=120,
+    ),
+    lambda **p: sandbox.execute_typescript(**p),
+)
 
 _registered_tools["code_execute_python"] = (
     ToolDefinition(

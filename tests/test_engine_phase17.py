@@ -6,24 +6,20 @@ Uses fully in-memory fakes so no DB, Redis, or LLM is required.
 
 from __future__ import annotations
 
-import asyncio
 import pytest
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 from nexus.core.engine import NexusEngine
 from nexus.types import (
     ActionStatus, ChainStatus, ChainPlan, GateVerdict,
-    ReasoningDecision, WorkflowDefinition, WorkflowExecution,
-    WorkflowStatus, StepType, EdgeType, TriggerType,
-    WorkflowStep, WorkflowEdge,
+    ReasoningDecision, WorkflowDefinition, WorkflowStatus, StepType, EdgeType, WorkflowStep, WorkflowEdge,
     PersonaContract, RiskLevel,
 )
 from nexus.exceptions import (
-    AnomalyDetected, EscalationRequired,
-    WorkflowNotFound, WorkflowValidationError,
+    AnomalyDetected, WorkflowNotFound, WorkflowValidationError,
 )
 
 
@@ -717,7 +713,7 @@ class TestParallelStep:
             return await orig(step, *args, **kwargs)
         engine._execute_action_step = track
 
-        execution = await engine.run_workflow(WF_ID, TENANT)
+        await engine.run_workflow(WF_ID, TENANT)
 
         assert "e1" in executed
 

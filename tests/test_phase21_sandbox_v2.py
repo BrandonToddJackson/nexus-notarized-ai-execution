@@ -1,8 +1,8 @@
-"""Phase 21 — Code Sandbox v2 tests (~70 tests).
+"""Phase 21 — Code Sandbox v2 tests (~70 tests) + TypeScript amendment (~30 tests).
 
 Tests cover:
-  - Config defaults for 6 new fields
-  - Tool registration (schema + risk level)
+  - Config defaults for 6 new fields + 3 TypeScript fields
+  - Tool registration (schema + risk level) including code_execute_typescript
   - Python: basic I/O, stdin, input_data, env_vars
   - Python: import validation (allowed / forbidden)
   - Python: timeout enforcement
@@ -13,21 +13,26 @@ Tests cover:
   - JavaScript: module systems (commonjs / esm)
   - JavaScript: timeout enforcement
   - JavaScript: output_format
+  - TypeScript: basic I/O, stdin, input_data, env_vars
+  - TypeScript: tsconfig override
+  - TypeScript: NEXUS_* env var filtering
+  - TypeScript: network isolation
+  - TypeScript: timeout enforcement
+  - TypeScript: output_format (auto / json / text)
+  - TypeScript: no-tsx error when npm install disabled
   - pip install (custom config, requires pip3)
   - npm install (custom config, requires npm)
   - Network isolation env vars
 """
 
-import json
 import os
 import shutil
 
 import pytest
-import pytest_asyncio
 
 from nexus.config import NexusConfig
 from nexus.exceptions import SandboxError
-from nexus.tools.sandbox_v2 import CodeSandbox, sandbox
+from nexus.tools.sandbox_v2 import CodeSandbox
 from nexus.tools.plugin import _registered_tools
 from nexus.types import RiskLevel
 
@@ -330,9 +335,7 @@ class TestPythonCleanup:
     @pytest.mark.asyncio
     async def test_temp_dir_deleted_on_success(self, tmp_path, monkeypatch):
         created_dirs = []
-        orig_mkdir = None
 
-        import nexus.tools.sandbox_v2 as sv2_mod
         import pathlib
 
         original_mkdir = pathlib.Path.mkdir
@@ -660,3 +663,312 @@ class TestNetworkIsolation:
         # We can't guarantee host has no proxy, so just check we didn't inject
         # our sentinel proxy
         assert "127.0.0.1:0" not in stdout
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestPhase21TypeScriptConfig — 3 tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPhase21TypeScriptConfig:
+    def test_sandbox_tsx_global_path_default(self):
+        cfg = NexusConfig()
+        assert cfg.sandbox_tsx_global_path == "tsx"
+
+    def test_sandbox_ts_install_timeout_default(self):
+        cfg = NexusConfig()
+        assert cfg.sandbox_ts_install_timeout == 120
+
+    def test_sandbox_ts_default_target_default(self):
+        cfg = NexusConfig()
+        assert cfg.sandbox_ts_default_target == "ES2022"
+
+    def test_sandbox_ts_cache_dir_default_empty(self):
+        cfg = NexusConfig()
+        assert cfg.sandbox_ts_cache_dir == ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestPhase21TypeScriptRegistration — 2 tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPhase21TypeScriptRegistration:
+    def test_typescript_tool_registered(self):
+        assert "code_execute_typescript" in _registered_tools
+
+    def test_typescript_risk_level(self):
+        defn, _ = _registered_tools["code_execute_typescript"]
+        assert defn.risk_level == RiskLevel.MEDIUM
+
+    def test_typescript_resource_pattern(self):
+        defn, _ = _registered_tools["code_execute_typescript"]
+        assert defn.resource_pattern == "code:*"
+
+    def test_typescript_schema_requires_code(self):
+        defn, _ = _registered_tools["code_execute_typescript"]
+        assert "code" in defn.parameters["required"]
+
+    def test_typescript_schema_has_packages(self):
+        defn, _ = _registered_tools["code_execute_typescript"]
+        assert "packages" in defn.parameters["properties"]
+
+    def test_typescript_schema_has_tsconfig(self):
+        defn, _ = _registered_tools["code_execute_typescript"]
+        assert "tsconfig" in defn.parameters["properties"]
+
+
+# Helper: skip entire TypeScript suite when tsx is not on PATH and npm install is disabled
+_TSX_AVAILABLE = shutil.which("tsx") is not None
+_NPM_AVAILABLE = shutil.which("npm") is not None
+
+# Shared tsx cache dir for the test session — tsx+typescript installed once, reused across all TS tests
+_TS_CACHE_DIR = "/tmp/nexus_test_tsx_cache"
+
+# Sandbox with npm install enabled + shared tsx cache (tsx installed once per session)
+def _make_npm_sb(**extra) -> CodeSandbox:
+    cfg = make_config(
+        sandbox_allow_npm_install=True,
+        sandbox_ts_install_timeout=180,
+        sandbox_ts_cache_dir=_TS_CACHE_DIR,
+        **extra,
+    )
+    return CodeSandbox(cfg)
+
+# Sandbox relying on globally installed tsx
+def _make_global_tsx_sb(**extra) -> CodeSandbox:
+    cfg = make_config(**extra)
+    return CodeSandbox(cfg)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestTypeScriptNoTsx — 1 test (no tsx globally, npm disabled)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(_TSX_AVAILABLE, reason="tsx is globally installed — error path not reachable")
+@pytest.mark.skipif(_NPM_AVAILABLE, reason="npm available — install path available")
+class TestTypeScriptNoTsx:
+    @pytest.mark.asyncio
+    async def test_raises_when_tsx_missing_and_npm_disabled(self):
+        cfg = make_config(sandbox_allow_npm_install=False, sandbox_tsx_global_path="tsx-does-not-exist")
+        no_tsx_sb = CodeSandbox(cfg)
+        with pytest.raises(SandboxError, match="tsx is not globally installed"):
+            await no_tsx_sb.execute_typescript("console.log('hi')")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestTypeScriptBasic — 8 tests (requires tsx globally or npm)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(
+    not _TSX_AVAILABLE and not _NPM_AVAILABLE,
+    reason="tsx not available (global or npm)",
+)
+class TestTypeScriptBasic:
+    def _sb(self):
+        if _NPM_AVAILABLE:
+            return _make_npm_sb()
+        return _make_global_tsx_sb()
+
+    @pytest.mark.asyncio
+    async def test_hello_world(self):
+        result = await self._sb().execute_typescript(
+            'console.log("hello ts")', output_format="text"
+        )
+        assert result["exit_code"] == 0
+        assert "hello ts" in result["stdout"]
+
+    @pytest.mark.asyncio
+    async def test_arithmetic(self):
+        result = await self._sb().execute_typescript(
+            "const x: number = 6 * 7; console.log(x);", output_format="text"
+        )
+        assert "42" in result["stdout"]
+
+    @pytest.mark.asyncio
+    async def test_stderr_captured(self):
+        result = await self._sb().execute_typescript(
+            'process.stderr.write("ts error\\n")', output_format="text"
+        )
+        assert "ts error" in result["stderr"]
+
+    @pytest.mark.asyncio
+    async def test_nonzero_exit_code(self):
+        result = await self._sb().execute_typescript(
+            "process.exit(5)", output_format="text"
+        )
+        assert result["exit_code"] == 5
+
+    @pytest.mark.asyncio
+    async def test_stdin_passed(self):
+        code = (
+            "const chunks: Buffer[] = [];\n"
+            "process.stdin.on('data', (d: Buffer) => chunks.push(d));\n"
+            "process.stdin.on('end', () => console.log(chunks.join('').trim()));\n"
+        )
+        result = await self._sb().execute_typescript(code, stdin="ts stdin test")
+        assert "ts stdin test" in result["stdout"]
+
+    @pytest.mark.asyncio
+    async def test_input_data_available(self):
+        code = (
+            "const data = JSON.parse(process.env.NEXUS_INPUT ?? 'null');\n"
+            "console.log(data.msg);\n"
+        )
+        result = await self._sb().execute_typescript(
+            code, input_data={"msg": "from_nexus_ts"}, output_format="text"
+        )
+        assert "from_nexus_ts" in result["stdout"]
+
+    @pytest.mark.asyncio
+    async def test_environment_variables_passed(self):
+        code = "console.log(process.env.MY_TS_VAR ?? 'missing');"
+        result = await self._sb().execute_typescript(
+            code, environment_variables={"MY_TS_VAR": "ts_injected"}, output_format="text"
+        )
+        assert "ts_injected" in result["stdout"]
+
+    @pytest.mark.asyncio
+    async def test_nexus_env_var_filtered(self):
+        code = "console.log(process.env.NEXUS_SECRET ?? 'not_set');"
+        result = await self._sb().execute_typescript(
+            code,
+            environment_variables={"NEXUS_SECRET": "leaked"},
+            output_format="text",
+        )
+        assert "leaked" not in result["stdout"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestTypeScriptOutputFormat — 4 tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(
+    not _TSX_AVAILABLE and not _NPM_AVAILABLE,
+    reason="tsx not available (global or npm)",
+)
+class TestTypeScriptOutputFormat:
+    def _sb(self):
+        if _NPM_AVAILABLE:
+            return _make_npm_sb()
+        return _make_global_tsx_sb()
+
+    @pytest.mark.asyncio
+    async def test_text_format(self):
+        result = await self._sb().execute_typescript(
+            'console.log("hi ts")', output_format="text"
+        )
+        assert "stdout" in result
+        assert "hi ts" in result["stdout"]
+
+    @pytest.mark.asyncio
+    async def test_json_format_valid(self):
+        result = await self._sb().execute_typescript(
+            'console.log(JSON.stringify({n: 42}))', output_format="json"
+        )
+        assert result.get("result") == {"n": 42}
+
+    @pytest.mark.asyncio
+    async def test_json_format_invalid(self):
+        result = await self._sb().execute_typescript(
+            'console.log("not json ts")', output_format="json"
+        )
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_auto_format_detects_json(self):
+        result = await self._sb().execute_typescript(
+            'console.log(JSON.stringify([1, 2, 3]))', output_format="auto"
+        )
+        assert result.get("result") == [1, 2, 3]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestTypeScriptTsconfig — 2 tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(
+    not _TSX_AVAILABLE and not _NPM_AVAILABLE,
+    reason="tsx not available (global or npm)",
+)
+class TestTypeScriptTsconfig:
+    def _sb(self):
+        if _NPM_AVAILABLE:
+            return _make_npm_sb()
+        return _make_global_tsx_sb()
+
+    @pytest.mark.asyncio
+    async def test_default_tsconfig_written(self):
+        """tsx should execute code with the default tsconfig without errors."""
+        result = await self._sb().execute_typescript(
+            "const x: string = 'typed'; console.log(x);", output_format="text"
+        )
+        assert result["exit_code"] == 0
+        assert "typed" in result["stdout"]
+
+    @pytest.mark.asyncio
+    async def test_tsconfig_override_accepted(self):
+        """Custom tsconfig override should not break execution."""
+        result = await self._sb().execute_typescript(
+            "const n: number = 10; console.log(n);",
+            tsconfig={"compilerOptions": {"target": "ES2020"}},
+            output_format="text",
+        )
+        assert result["exit_code"] == 0
+        assert "10" in result["stdout"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestTypeScriptTimeout — 2 tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(
+    not _TSX_AVAILABLE and not _NPM_AVAILABLE,
+    reason="tsx not available (global or npm)",
+)
+class TestTypeScriptTimeout:
+    def _sb(self, **kw):
+        if _NPM_AVAILABLE:
+            return _make_npm_sb(**kw)
+        return _make_global_tsx_sb(**kw)
+
+    @pytest.mark.asyncio
+    async def test_infinite_loop_triggers_timeout(self):
+        cfg_sb = self._sb(sandbox_max_execution_seconds=1)
+        with pytest.raises(SandboxError, match="timed out"):
+            await cfg_sb.execute_typescript("while(true){}")
+
+    @pytest.mark.asyncio
+    async def test_explicit_timeout_param(self):
+        any_sb = self._sb()
+        with pytest.raises(SandboxError, match="timed out"):
+            await any_sb.execute_typescript("while(true){}", timeout=1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestTypeScriptNetworkIsolation — 2 tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(
+    not _TSX_AVAILABLE and not _NPM_AVAILABLE,
+    reason="tsx not available (global or npm)",
+)
+class TestTypeScriptNetworkIsolation:
+    def _sb(self):
+        if _NPM_AVAILABLE:
+            return _make_npm_sb()
+        return _make_global_tsx_sb()
+
+    @pytest.mark.asyncio
+    async def test_proxy_injected_when_network_disabled(self):
+        code = "console.log(process.env.http_proxy ?? 'not_set');"
+        result = await self._sb().execute_typescript(
+            code, allow_network=False, output_format="text"
+        )
+        assert "127.0.0.1" in result["stdout"]
+
+    @pytest.mark.asyncio
+    async def test_proxy_not_injected_when_network_allowed(self):
+        code = "console.log(process.env.http_proxy ?? 'not_set');"
+        result = await self._sb().execute_typescript(
+            code, allow_network=True, output_format="text"
+        )
+        assert "127.0.0.1:0" not in result["stdout"]

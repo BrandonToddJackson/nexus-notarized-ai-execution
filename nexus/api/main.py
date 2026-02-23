@@ -125,7 +125,11 @@ async def lifespan(app: FastAPI):
     output_validator = OutputValidator()
     cot_logger = CoTLogger()
     context_builder = ContextBuilder(knowledge_store=knowledge_store)
-    tool_selector = ToolSelector(registry=tool_registry)
+    # LLM client — enables intelligent task decomposition + tool selection via Ollama
+    from nexus.llm.client import LLMClient
+    llm_client = LLMClient(task_type="general")
+
+    tool_selector = ToolSelector(registry=tool_registry, llm_client=llm_client)
     sandbox = Sandbox()
     from nexus.credentials.encryption import CredentialEncryption
     from nexus.credentials.vault import CredentialVault
@@ -154,6 +158,7 @@ async def lifespan(app: FastAPI):
         think_act_gate=think_act_gate,
         continue_complete_gate=continue_complete_gate,
         escalate_gate=escalate_gate,
+        llm_client=llm_client,
         config=config,
     )
     app.state.engine = engine

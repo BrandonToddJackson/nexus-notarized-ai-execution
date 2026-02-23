@@ -18,7 +18,6 @@ import asyncio
 import sys
 import tempfile
 import traceback
-from typing import Any
 
 # ── Engine builder ─────────────────────────────────────────────────────────────
 
@@ -404,7 +403,7 @@ async def scenario_loop(engine, workflow_manager) -> None:
 
 async def scenario_parallel(engine, workflow_manager) -> None:
     print("\n─── Scenario 5: PARALLEL step (edge-based siblings) ───")
-    from nexus.types import WorkflowStep, WorkflowEdge, StepType, EdgeType, ChainStatus
+    from nexus.types import WorkflowStep, WorkflowEdge, StepType, ChainStatus
     from uuid import uuid4
 
     # Edge-based parallel: root → [branch_a, branch_b] → converge
@@ -587,7 +586,6 @@ async def scenario_no_manager(engine, workflow_manager) -> None:
 
 async def scenario_template_resolution(engine, workflow_manager) -> None:
     print("\n─── Scenario 9: Template param resolution from trigger ───")
-    from nexus.types import WorkflowStep, StepType, ChainStatus
 
     # Verify _resolve_params works with real engine
     ctx = {

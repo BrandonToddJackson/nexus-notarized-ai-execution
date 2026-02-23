@@ -40,11 +40,11 @@ _FIXTURE_DIR = Path(__file__).parent / "fixtures"
 ECHO_SERVER_SCRIPT = str(_FIXTURE_DIR / "mcp_echo_server.py")
 FETCH_SERVER_SCRIPT = str(_FIXTURE_DIR / "mcp_fetch_server.py")
 
-from nexus.exceptions import MCPConnectionError, MCPToolError
-from nexus.mcp.client import MCPClient, make_tool_name, _normalize
-from nexus.mcp.adapter import MCPToolAdapter
-from nexus.tools.registry import ToolRegistry
-from nexus.types import MCPServerConfig, RiskLevel, ToolDefinition
+from nexus.exceptions import MCPConnectionError, MCPToolError  # noqa: E402
+from nexus.mcp.client import MCPClient, make_tool_name, _normalize  # noqa: E402
+from nexus.mcp.adapter import MCPToolAdapter  # noqa: E402
+from nexus.tools.registry import ToolRegistry  # noqa: E402
+from nexus.types import MCPServerConfig, RiskLevel, ToolDefinition  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -1170,7 +1170,7 @@ class TestMCPNexusEngineIntegration:
         from nexus.tools.executor import ToolExecutor
         from nexus.tools.sandbox import Sandbox
         from nexus.tools.selector import ToolSelector
-        from nexus.types import PersonaContract, RiskLevel
+        from nexus.types import PersonaContract
 
         MCP_TOOL = "mcp_nexus_test_echo_server_echo"
 
@@ -1503,27 +1503,26 @@ class TestMCPAdapterCredentialInject:
     def test_no_vault_skips_injection(self):
         """If adapter has no vault, credential_id is silently ignored."""
         registry = ToolRegistry()
-        adapter = MCPToolAdapter(registry, vault=None)
-        cfg = MCPServerConfig(
+        no_vault_adapter = MCPToolAdapter(registry, vault=None)
+        MCPServerConfig(
             id="s3", tenant_id="t1", name="svc", url="",
             transport="stdio", credential_id="some-id",
         )
         # _inject_credential is only called when vault is set; adapter.register_server
         # guards on: if server_config.credential_id and self._vault is not None
-        assert adapter._vault is None
+        assert no_vault_adapter._vault is None
 
     def test_no_credential_id_skips_injection(self):
         """If server_config has no credential_id, env is not modified."""
-        from nexus.types import CredentialType
         vault = _make_vault()
         registry = ToolRegistry()
-        adapter = MCPToolAdapter(registry, vault=vault)
+        MCPToolAdapter(registry, vault=vault)
 
-        cfg = MCPServerConfig(
+        no_cred_cfg = MCPServerConfig(
             id="s4", tenant_id="t1", name="svc", url="",
             transport="stdio",  # credential_id=None (default)
         )
-        assert cfg.credential_id is None
+        assert no_cred_cfg.credential_id is None
 
     def test_inject_credential_raises_on_tenant_mismatch(self):
         from nexus.types import CredentialType

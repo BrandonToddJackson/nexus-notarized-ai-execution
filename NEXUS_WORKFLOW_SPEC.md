@@ -16,8 +16,8 @@
 | Phase 17: DAG Execution Engine | ✅ COMPLETE | 74/74 ✓ | engine.py extended: run_workflow (loads workflow, verifies active, builds context, entry points excluding LOOP_BACK), _execute_dag_layer (recursive DAG traversal via context["_done"]), _execute_action_step (full 4-gate pipeline per step — all gates apply), _execute_branch_step (condition routing + marks unchosen branches in _done), _execute_loop_step (self-loop model: LOOP_BACK is structural marker, iterates own tool_name N times), _execute_parallel_step (edge-based siblings + config["branches"] fan-out), _execute_sub_workflow_step (recursive run_workflow), _execute_approval_step (wait/poll/escalate), _resolve_params ({{step.field}} and {{trigger.field}} template resolution). run() fully backwards-compatible. 25/25 real integration checks with live engine (no mocks). |
 | Phase 18: Credential Vault | ✅ COMPLETE | 45/45 ✓ | nexus/credentials/: CredentialEncryption (Fernet), CredentialVault (CRUD, inject_credentials, get_env_vars, refresh_oauth2), sanitize_tool_params; ToolExecutor wired; 45 tests |
 | Phase 19: MCP Integration | ✅ COMPLETE | 118/118 ✓ | nexus/mcp/: MCPClient (stdio/sse/streamable_http, namespaced tools, env merge), MCPToolAdapter (register/unregister/reconnect_all, vault credential injection); MCPServerConfig.credential_id; proven live with sequential-thinking + Context7 |
-| Phase 20: Universal HTTP Tool | 🔲 TODO | — | http_request + data_transform built-in tools |
-| Phase 21: Code Sandbox v2 | 🔲 TODO | — | Python/JS subprocess sandbox, forbidden import check, memory limits |
+| Phase 20: Universal HTTP Tool | ✅ COMPLETE | 74/74 ✓ | nexus/tools/builtin/http_request.py — http_request registered directly in _registered_tools (complex nested schema); method/url/headers/query_params/body/body_format (json/form/multipart/graphql/raw)/response_format (auto/json/text/binary)/response_path (JMESPath)/timeout/max_retries/retry_on/verify_ssl/http2/proxy/response_size_limit_kb/auth (basic/bearer/api_key)/pagination (cursor/offset/link_header)/rate_limit; 4xx/5xx returns error dict; client.stream() for size-limited reads. nexus/tools/builtin/data_transform.py — 15 operations: filter (14 operators + dot-notation), map (template/math_op), sort, group_by, flatten, pick, omit, rename, deduplicate, limit, skip, aggregate (sum/avg/min/max/count/first/last/concat/distinct), merge, set, cast; deep-copies input; jmespath>=1.0.0 added to pyproject.toml |
+| Phase 21: Code Sandbox v2 | ✅ COMPLETE | 95/96 ✓ (1 skip) | nexus/tools/sandbox_v2.py — CodeSandbox with execute_python (ast.parse import validation, venv creation, resource.RLIMIT_AS memory limit, runpy wrapper), execute_javascript (ESM .mjs / CJS .cjs, preamble inject, npm install), execute_typescript (3-tier tsx resolution: A=global binary, B=shared cache dir — tsx installed once reused across calls, C=per-execution install; process-group kill via os.setsid+os.killpg to terminate tsx wrapper + child node process on timeout; TSX_TSCONFIG_PATH env, default tsconfig ES2022/bundler); sandbox_ts_cache_dir config field for shared tsx install; registered as code_execute_python/code_execute_javascript/code_execute_typescript (RiskLevel.MEDIUM, resource_pattern=code:*); NEXUS_* env var keys filtered; network isolation via proxy env injection; auto/json/text output formats; shutil.rmtree cleanup in finally block |
 | Phase 22: Trigger System | 🔲 TODO | — | Webhooks, cron scheduler, event bus |
 | Phase 23: NL Workflow Generation | 🔲 TODO | — | LLM → validated DAG via WorkflowGenerator + refine/explain |
 | Phase 24: Visual Canvas | 🔲 TODO | — | React Flow drag-and-drop workflow editor with NL generation |
@@ -30,8 +30,8 @@
 | Phase 31: Infrastructure v2 | 🔲 TODO | — | Worker/scheduler services, Docker updates, nginx config |
 | Phase 32: Examples & Docs v2 | 🔲 TODO | — | Slack→Sheets, email classifier, scheduled report, MCP GitHub examples; README v2 section |
 
-**Last verified:** 2026-02-22
-**Test suite:** `.venv312/bin/pytest tests/ -v` → **826/826 passed** (v1 phases 0-14 + v2 phases 15-17)
+**Last verified:** 2026-02-23
+**Test suite:** `.venv312/bin/pytest tests/ -m "not slow"` → **1213/1213 passed** (v1 phases 0-14 + v2 phases 15-21 + TypeScript amendment)
 
 ---
 

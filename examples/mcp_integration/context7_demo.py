@@ -84,7 +84,7 @@ async def main() -> None:
 
     console.print(f"  [green]✓[/green] Credential stored.  id={rec.id[:16]}…")
     console.print(f"  [green]✓[/green] encrypted_data is blanked in returned record: {rec.encrypted_data!r}")
-    console.print(f"  [dim]The plaintext key lives only inside the vault's encrypted store.[/dim]")
+    console.print("  [dim]The plaintext key lives only inside the vault's encrypted store.[/dim]")
 
     # ─── 2. Register Context7 MCP server with credential_id ──────────────
     console.rule("[bold cyan]Step 2: Connect Context7 MCP Server (key injected via vault)")
@@ -103,7 +103,7 @@ async def main() -> None:
         credential_id=rec.id,       # ← this is the only change needed!
     )
 
-    console.print(f"  Spawning: [yellow]npx -y @upstash/context7-mcp[/yellow]")
+    console.print("  Spawning: [yellow]npx -y @upstash/context7-mcp[/yellow]")
     console.print(f"  credential_id: [dim]{rec.id[:16]}…[/dim] → vault auto-injects CONTEXT7_API_KEY")
 
     with console.status("[dim]Connecting to Context7 (may take a moment to download)...[/dim]"):

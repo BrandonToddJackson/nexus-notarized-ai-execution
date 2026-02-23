@@ -40,7 +40,7 @@ async def shadcn_frontend_pipeline(
     from nexus.tools.builtin.frontend_design import generate_frontend_design, _detect_app_type
 
     print(f"\n{'='*60}")
-    print(f"  shadcn/ui Frontend Design Generator")
+    print("  shadcn/ui Frontend Design Generator")
     print(f"{'='*60}")
     print(f"  Prompt      : {user_prompt}")
     print(f"  Color scheme: {color_scheme}")

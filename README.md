@@ -31,6 +31,10 @@ flowchart LR
 | Trust Graduation Tiers | ❌ | ❌ | ❌ | ✅ |
 | Multi-tenant Isolation | ❌ | ❌ | ❌ | ✅ |
 | Chain-of-Thought Capture | ❌ | ❌ | ❌ | ✅ |
+| Persistent Workflow Automation | ❌ | partial | ❌ | ✅ |
+| Encrypted Credential Vault | ❌ | ❌ | ❌ | ✅ |
+| MCP Tool Integration | ❌ | ❌ | partial | ✅ |
+| Code Sandbox (Python/JS/TypeScript) | ❌ | ❌ | ❌ | ✅ |
 | RAG + Knowledge Scoping | ✅ | ✅ | ✅ | ✅ |
 | Multi-provider LLM | ✅ | ✅ | ✅ | ✅ |
 | Tool Framework | ✅ | ✅ | ✅ | ✅ |
@@ -100,37 +104,101 @@ The dashboard streams gate results, seal cards, and CoT traces in real time as t
 
 ## Architecture
 
+### Full System Topology
+
 ```mermaid
 flowchart TB
-    subgraph API["API Layer"]
-        REST[REST Endpoints]
-        SSE[SSE Streaming]
-        JWTRL[JWT · Rate Limiter]
+    CLIENT([API Client]) --> API
+    WH([Webhook]) --> TM
+    CR([Cron · Event]) --> TM
+
+    subgraph API["API Layer (FastAPI)"]
+        V1["v1 — Agent Execution"]
+        V2["v2 — Workflow Automation"]
+        AUTH["JWT · Rate Limiter\n60 req/min · 100 chains/hr"]
+    end
+
+    TM[Trigger Manager] --> WE[DAG Executor]
+
+    subgraph ORCH["Orchestration"]
+        ENG[NexusEngine]
+        WE
+        WM[Workflow Manager]
     end
 
     subgraph COG["Cognitive Plane"]
-        KB[Knowledge Store]
+        KB["Knowledge Store (ChromaDB · RAG)"]
         CTX[Context Builder]
-        TAG[Think / Act Gate]
+        TA[Think / Act Gate]
     end
 
-    subgraph SEC["Security Plane"]
-        PM[Persona Manager]
-        AE[Anomaly Engine]
-        NO[Notary · Verifier]
+    subgraph SEC["Security Plane — every action, always"]
+        PM["Persona Manager\n(Trust Tiers)"]
+        AE["Anomaly Engine\nGate 1 Scope · Gate 2 Intent\nGate 3 TTL · Gate 4 Drift"]
+        NT["Notary · Verifier"]
     end
 
-    subgraph EXE["Execution Layer"]
+    subgraph EXEC["Execution Layer"]
         TR[Tool Registry]
-        SEL[Selector · Sandbox]
-        EX[Executor]
+        CV["Credential Vault\n(Fernet-encrypted)"]
+        MCP["MCP Client\n(stdio · sse · http)"]
+        SB["Code Sandbox\n(Python · JS · TypeScript)"]
+        HTTP["HTTP Tool\n+ Data Transform"]
     end
 
-    API --> COG
-    API --> SEC
-    COG --> EXE
-    SEC --> EXE
-    EXE --> LED[(Immutable Ledger)]
+    LED[("Merkle-Chain\nLedger")]
+
+    subgraph STORE["Persistence"]
+        PG[("PostgreSQL\nchains · personas\nworkflows · credentials")]
+        RD[("Redis\nfingerprints · rate limits\ndistributed locks")]
+    end
+
+    API --> ORCH
+    ORCH --> COG
+    ORCH --> SEC
+    COG --> CTX --> TA --> SEC
+    SEC --> PM --> AE
+    AE -->|"all 4 pass"| NT
+    AE -->|"any fail"| LED
+    NT --> EXEC
+    NT --> LED
+    EXEC --> TR
+    EXEC --> CV
+    EXEC --> MCP
+    EXEC --> SB
+    EXEC --> HTTP
+    ORCH --> STORE
+    LED --> PG
+    KB --> PG
+```
+
+### Tool Ecosystem
+
+```mermaid
+flowchart LR
+    subgraph BUILTIN["Built-in Tools"]
+        WS[web_search · web_fetch]
+        FILE[file_read · file_write]
+        COMMS[send_email]
+        DATA[knowledge_search · compute_stats]
+        HTTP[http_request + data_transform\n15 pipeline operations]
+        FE[generate_frontend_design]
+    end
+
+    subgraph SANDBOX["Code Sandbox (subprocess-isolated)"]
+        PY["code_execute_python\nast import validation · venv · RLIMIT_AS"]
+        JS["code_execute_javascript\nESM/CJS · npm install"]
+        TS["code_execute_typescript\ntsx cache · process-group kill"]
+    end
+
+    subgraph MCP_TOOLS["MCP Tools (dynamic registration)"]
+        MCPN["mcp_{server}_{tool} namespace"]
+        MCPE["stdio · SSE · streamable_http\ntransports · credential injection"]
+    end
+
+    TR[Tool Registry] --> BUILTIN
+    TR --> SANDBOX
+    TR --> MCP_TOOLS
 ```
 
 **Not multi-agent.** One agent, multiple personas. A persona is a constrained operating mode — not a separate entity.
@@ -179,23 +247,28 @@ Personas accumulate trust through consistent behavior:
 
 ```
 nexus/
-├── core/           # Security plane: personas, anomaly, notary, ledger, engine
+├── core/           # Security plane: personas, anomaly, notary, ledger, engine (DAG executor)
 ├── knowledge/      # Cognitive plane: embeddings, vector store, context
 ├── reasoning/      # Decision gates: think/act, continue/complete, escalate
-├── tools/          # Execution: registry, sandbox, executor, built-ins
-├── db/             # Persistence: ORM models (v1 + workflows/triggers/credentials/MCP), repository, migrations
-├── llm/            # LLM integration via litellm + cost tracking
+├── tools/          # Execution: registry, sandbox v2 (Py/JS/TS), executor, built-ins
+│   └── builtin/    # web, file, comms, data, http_request, data_transform, frontend_design
+├── workflows/      # DAG definition: dag.py, validator.py, manager.py (v2)
+├── credentials/    # Credential vault: encryption.py (Fernet), vault.py (v2)
+├── mcp/            # MCP client + tool adapter + credential injection (v2)
+├── triggers/       # Trigger system: webhook, cron, event bus (v2, planned)
+├── db/             # ORM models (v1 + v2), repository, Alembic migrations
+├── llm/            # litellm integration + cost tracking + multi-provider routing
 ├── cache/          # Redis: fingerprint store, rate limiting, distributed locks
 ├── auth/           # JWT, middleware, rate limiter
-├── api/            # FastAPI routes and schemas
+├── api/            # FastAPI v1 routes + schemas
 ├── cli/            # Typer CLI commands + project templates
 ├── callbacks/      # NexusCallback protocol + LoggingCallback
 ├── config/         # NexusConfig (BaseSettings) + YAML loaders
 frontend/           # React dashboard (Vite, port 5173) — 17 source files
-examples/           # quickstart, custom_tool, local_llm, customer_support, code_review
+examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (826 tests — phases 0-17)
+tests/              # pytest suite (1213 tests — phases 0-21 + TypeScript)
 ```
 
 ## CLI
@@ -313,7 +386,38 @@ NEXUS_MCP_TOOL_TIMEOUT=60                       # Per-tool execution timeout
 
 ## v2 Roadmap — AI Automation Platform
 
-NEXUS v2 transforms the single-shot agent framework into a **persistent, trigger-driven automation platform** — every workflow still passes through all 4 anomaly gates and is sealed in the ledger.
+NEXUS v2 transforms the single-shot agent framework into a **persistent, trigger-driven automation platform** — every workflow step still passes through all 4 anomaly gates and is sealed in the ledger.
+
+### v2 DAG Execution Flow
+
+```mermaid
+flowchart LR
+    TR([Trigger\ncron · webhook · manual]) --> WE["Workflow Engine\n(load + verify active)"]
+    WE --> EP["Entry Steps\n(no incoming edges)"]
+
+    subgraph PIPELINE["Per-Step Pipeline — all 4 gates applied to every DAG step"]
+        CTX2[Build Context] --> TA2[Think/Act Gate]
+        TA2 --> DECL[Declare Intent]
+        DECL --> PA[Activate Persona]
+        PA --> AE2{"Anomaly Engine\nGates 1–4"}
+        AE2 -->|"any fail"| BLK([Block + Seal])
+        AE2 -->|"all pass"| NT2[Notarize]
+        NT2 --> EX2[Execute Tool]
+        EX2 --> VL[Validate Output]
+        VL --> LED2[(Ledger)]
+    end
+
+    EP --> PIPELINE
+    LED2 --> NX["Resolve Next\n(edges + conditions)"]
+    NX -->|"sequential"| EP
+    NX -->|"parallel"| PAR["asyncio.gather\n(concurrent steps)"]
+    PAR --> EP
+    NX -->|"complete"| DONE([Workflow Complete])
+```
+
+**The key invariant:** no step in any workflow — regardless of complexity — can bypass the 4-gate security pipeline.
+
+### Phase Status
 
 | Phase | Feature | Status |
 |-------|---------|--------|
@@ -321,9 +425,9 @@ NEXUS v2 transforms the single-shot agent framework into a **persistent, trigger
 | 16 | Workflow DAG Definition — step types, branching, loops, versioning | ✅ Done |
 | 17 | DAG Execution Engine — parallel steps, branch, loop, sub-workflow, approval | ✅ Done |
 | 18 | Credential Vault — Fernet-encrypted secrets, OAuth2, runtime injection | ✅ Done |
-| 19 | MCP Integration — Model Context Protocol client + tool adapter | ✅ Done |
-| 20 | Universal HTTP Tool — REST caller with auth injection + response mapping | 🔲 Planned |
-| 21 | Code Sandbox v2 — Python/JS with pip/npm, memory/CPU hard limits | 🔲 Planned |
+| 19 | MCP Integration — Model Context Protocol client + tool adapter + credential injection | ✅ Done |
+| 20 | Universal HTTP Tool + Data Transform — REST caller (auth/pagination/retry/JMESPath) + 15-op pipeline | ✅ Done |
+| 21 | Code Sandbox v2 — Python/JS/TypeScript subprocess isolation, tsx cache, process-group kill | ✅ Done |
 | 22 | Trigger System — webhooks, cron scheduler, event bus | 🔲 Planned |
 | 23 | NL Workflow Generation — natural language → DAG via LLM | 🔲 Planned |
 | 24 | Visual Canvas — React Flow drag-and-drop workflow editor | 🔲 Planned |

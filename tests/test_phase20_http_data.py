@@ -6,7 +6,6 @@ thread).  No unittest.mock, MagicMock, or patch anywhere in this file.
 data_transform tests operate on in-memory Python data; no network I/O is needed.
 """
 
-import asyncio
 import base64
 import json
 import socket
@@ -18,19 +17,14 @@ import uuid
 
 import pytest
 
-import nexus.tools.builtin  # trigger registration
 from nexus.tools.plugin import get_registered_tools
 from nexus.tools.builtin.http_request import (
     http_request,
     _parse_link_header,
     _parse_response_body,
-    _extract_jmespath,
 )
 from nexus.tools.builtin.data_transform import (
     data_transform,
-    _get_nested,
-    _set_nested,
-    _del_nested,
 )
 from nexus.exceptions import ToolError
 
@@ -570,7 +564,7 @@ class TestHttpRequestBasic:
         # Proxy pointing to a closed port — proves the proxy param was passed to httpx
         with pytest.raises(ToolError, match="Connection failed"):
             await http_request(
-                url=f"http://127.0.0.1/irrelevant",
+                url="http://127.0.0.1/irrelevant",
                 proxy=f"http://127.0.0.1:{closed_port}",
                 timeout_seconds=2,
             )
@@ -1397,14 +1391,7 @@ class TestFilterOperatorsComplete:
 
     @pytest.mark.asyncio
     async def test_filter_not_contains_string(self):
-        result = await data_transform(
-            input_data=self.DATA,
-            operations=[{"op": "filter", "field": "name", "operator": "not_contains", "value": "a"}],
-        )
-        # names without "a": "beta" has no lowercase 'a'... wait:
-        # alpha→has 'a', beta→has 'a', gamma→has 'a', delta→has 'a', None→is_null
-        # So only None passes not_contains for non-string (returns True from the not-string branch)
-        # Let's use a value that only some match
+        # "a" appears in every name; use a more selective value instead
         result2 = await data_transform(
             input_data=self.DATA,
             operations=[{"op": "filter", "field": "name", "operator": "not_contains", "value": "eta"}],

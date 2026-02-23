@@ -108,7 +108,11 @@ def _build_in_memory_engine():
     credential_encryption = CredentialEncryption(key=cfg.credential_encryption_key)
     vault = CredentialVault(encryption=credential_encryption)
 
-    tool_selector = ToolSelector(registry=tool_registry)
+    # LLM client — enables intelligent task decomposition + tool selection via Ollama
+    from nexus.llm.client import LLMClient
+    llm_client = LLMClient(task_type="general")
+
+    tool_selector = ToolSelector(registry=tool_registry, llm_client=llm_client)
     sandbox = Sandbox()
     tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier, vault=vault)
 
@@ -127,6 +131,7 @@ def _build_in_memory_engine():
         think_act_gate=ThinkActGate(),
         continue_complete_gate=ContinueCompleteGate(),
         escalate_gate=EscalateGate(),
+        llm_client=llm_client,
         config=cfg,
     )
 

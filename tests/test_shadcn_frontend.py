@@ -12,10 +12,8 @@ Groups:
   TestFullPipeline            — MCP → tool → output files end-to-end (needs LLM+node+npx)
 """
 
-import json
 import os
 import shutil
-from pathlib import Path
 
 import pytest
 
@@ -23,7 +21,6 @@ from nexus.tools.builtin.frontend_design import (
     generate_frontend_design,
     _detect_app_type,
     _resolve_components,
-    _APP_COMPONENTS,
 )
 from nexus.tools.plugin import _registered_tools
 from nexus.types import RiskLevel

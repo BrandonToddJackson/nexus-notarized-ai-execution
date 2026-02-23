@@ -186,7 +186,7 @@ async def main():
     console.print()
     console.print("  [bold green]NEXUS successfully integrated with the MCP server:[/bold green]")
     console.print(f"  • MCP tool [cyan]{MCP_TOOL}[/cyan] was registered from a real subprocess")
-    console.print(f"  • It passed all 4 anomaly gates under the [bold]mcp-demo-agent[/bold] persona")
+    console.print("  • It passed all 4 anomaly gates under the [bold]mcp-demo-agent[/bold] persona")
     console.print(f"  • The tool executed and returned: [yellow]{seal.tool_result!r}[/yellow]")
     console.print(f"  • The result is sealed in the immutable ledger (fingerprint: {seal.fingerprint[:24]}…)")
     console.print()

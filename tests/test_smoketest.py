@@ -1615,10 +1615,10 @@ class TestPhase9AuthProtection:
 # PHASE 19 — MCP Integration
 # ─────────────────────────────────────────────────────────────────────────────
 
-import sys as _sys
-import threading as _threading
-from http.server import BaseHTTPRequestHandler as _Handler, HTTPServer as _HTTPServer
-from pathlib import Path as _Path
+import sys as _sys  # noqa: E402
+import threading as _threading  # noqa: E402
+from http.server import BaseHTTPRequestHandler as _Handler, HTTPServer as _HTTPServer  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
 
 _FIXTURE_DIR = _Path(__file__).parent / "fixtures"
 _ECHO_SERVER  = str(_FIXTURE_DIR / "mcp_echo_server.py")

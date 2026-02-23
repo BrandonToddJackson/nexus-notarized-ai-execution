@@ -108,6 +108,12 @@ class NexusConfig(BaseSettings):
     sandbox_max_output_kb: int = 1024              # global default; per-call override available
     sandbox_network_isolation: str = "best_effort"  # "best_effort" | "strict"
 
+    # ── TypeScript Sandbox ──
+    sandbox_tsx_global_path: str = "tsx"          # path to global tsx binary when npm install disabled
+    sandbox_ts_install_timeout: int = 120         # npm install timeout for tsx+typescript (larger than JS)
+    sandbox_ts_default_target: str = "ES2022"     # default TypeScript compilation target
+    sandbox_ts_cache_dir: str = ""                # shared tsx+typescript install dir; "" = install per-execution
+
     # ── Background Execution ──
     worker_concurrency: int = 4
     task_queue_url: str = "redis://localhost:6379/1"  # separate DB from cache

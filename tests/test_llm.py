@@ -324,7 +324,6 @@ class TestLLMClientComplete:
 
     async def test_default_model_from_config(self):
         """No model arg → routes via select_model() based on config."""
-        from nexus.config import config as nexus_config
         from nexus.llm.client import select_model
         client = LLMClient()
         assert client.model == select_model()
