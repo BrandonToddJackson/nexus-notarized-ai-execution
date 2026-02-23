@@ -7,5 +7,13 @@ and persona contracts as built-in tools.
 
 from nexus.mcp.client import MCPClient
 from nexus.mcp.adapter import MCPToolAdapter
+from nexus.mcp.known_servers import (
+    shadcn_server, nextjs_server, context7_server,
+    sequential_thinking_server, KNOWN_SERVERS,
+)
 
-__all__ = ["MCPClient", "MCPToolAdapter"]
+__all__ = [
+    "MCPClient", "MCPToolAdapter",
+    "shadcn_server", "nextjs_server", "context7_server",
+    "sequential_thinking_server", "KNOWN_SERVERS",
+]

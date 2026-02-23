@@ -26,10 +26,21 @@ class NexusConfig(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # ── LLM (litellm) ──
+    # Supports any litellm provider: anthropic/*, openai/*, ollama/*, huggingface/*, etc.
+    # Cloud: set ANTHROPIC_API_KEY or OPENAI_API_KEY and use the matching model string.
+    # Local: set default_llm_model to any ollama/* model — no API key required.
+    #
+    # When using Ollama, the system automatically routes tasks to the right model:
+    #   ollama_code_model   — code generation, tool use, agentic reasoning
+    #   ollama_vision_model — general purpose, multimodal (images, charts, OCR, UI)
+    # Cloud providers (Anthropic, OpenAI) handle all task types natively via one model.
     default_llm_model: str = "anthropic/claude-sonnet-4-20250514"
     llm_api_key: Optional[str] = None          # set ANTHROPIC_API_KEY or OPENAI_API_KEY in env
     llm_max_tokens: int = 4096
     llm_temperature: float = 0.1               # low temp for deterministic declarations
+    ollama_base_url: str = "http://localhost:11434"   # Ollama API endpoint
+    ollama_code_model: str = "ollama/qwen2.5-coder:7b"   # code gen, tool use, agentic tasks
+    ollama_vision_model: str = "ollama/qwen2.5vl:7b"     # general purpose + multimodal
 
     # ── Embeddings ──
     embedding_model: str = "all-MiniLM-L6-v2"  # sentence-transformers model
@@ -86,8 +97,16 @@ class NexusConfig(BaseSettings):
     sandbox_allowed_imports: list[str] = [
         "json", "math", "re", "datetime", "collections",
         "itertools", "functools", "hashlib", "base64",
-        "urllib.parse", "csv", "io",
+        "urllib.parse", "csv", "io", "os", "sys",
     ]
+
+    # ── Code Sandbox v2 additions ──
+    sandbox_allow_pip_install: bool = False        # Must be explicitly enabled
+    sandbox_allow_npm_install: bool = False
+    sandbox_pip_install_timeout: int = 60          # seconds per package
+    sandbox_npm_install_timeout: int = 60          # seconds total npm install
+    sandbox_max_output_kb: int = 1024              # global default; per-call override available
+    sandbox_network_isolation: str = "best_effort"  # "best_effort" | "strict"
 
     # ── Background Execution ──
     worker_concurrency: int = 4

@@ -1242,10 +1242,9 @@ class TestPhase6LLMClient:
                 await client.complete([{"role": "user", "content": "hi"}])
 
     def test_default_model_from_config(self):
-        from nexus.llm.client import LLMClient
-        from nexus.config import config
+        from nexus.llm.client import LLMClient, select_model
         client = LLMClient()
-        assert client.model == config.default_llm_model
+        assert client.model == select_model()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

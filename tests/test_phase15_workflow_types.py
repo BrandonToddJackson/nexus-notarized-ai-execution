@@ -241,7 +241,9 @@ class TestPhase15Config:
             assert mod in cfg.sandbox_allowed_imports, f"{mod!r} missing from allowed imports"
 
     def test_sandbox_allowed_imports_excludes_dangerous(self, cfg):
-        dangerous = ("os", "sys", "subprocess", "importlib", "shutil")
+        # os and sys are allowed (subprocess-isolated; sys.stdin needed for stdin processing)
+        # The genuinely dangerous modules that bypass subprocess isolation stay blocked
+        dangerous = ("subprocess", "importlib", "shutil", "ctypes", "socket")
         for mod in dangerous:
             assert mod not in cfg.sandbox_allowed_imports, f"{mod!r} should not be allowed"
 
