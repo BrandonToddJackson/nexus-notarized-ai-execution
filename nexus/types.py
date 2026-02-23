@@ -331,6 +331,7 @@ class MCPServerConfig(BaseModel):
     command: Optional[str] = None       # for stdio transport: executable path
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    credential_id: Optional[str] = None  # vault credential to inject as env vars
     enabled: bool = True
     discovered_tools: list[str] = Field(default_factory=list)
     last_connected_at: Optional[datetime] = None

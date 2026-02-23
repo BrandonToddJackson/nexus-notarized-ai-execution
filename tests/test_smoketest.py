@@ -1610,3 +1610,146 @@ class TestPhase9AuthProtection:
         resp = api_client.get("/v1/ledger", headers=auth_headers)
         assert resp.status_code == 200
         assert resp.json()["seals"] == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 19 — MCP Integration
+# ─────────────────────────────────────────────────────────────────────────────
+
+import sys as _sys
+import threading as _threading
+from http.server import BaseHTTPRequestHandler as _Handler, HTTPServer as _HTTPServer
+from pathlib import Path as _Path
+
+_FIXTURE_DIR = _Path(__file__).parent / "fixtures"
+_ECHO_SERVER  = str(_FIXTURE_DIR / "mcp_echo_server.py")
+_FETCH_SERVER = str(_FIXTURE_DIR / "mcp_fetch_server.py")
+
+
+class TestPhase19MCPIntegration:
+    """Smoke-level MCP integration — real subprocesses, zero mocks.
+
+    Tests that NEXUS can:
+      1. Connect to a FastMCP server (mcp SDK) and call its tools
+      2. Connect to mcp-server-fetch (modelcontextprotocol/servers) and use it
+      3. Register MCP tools via MCPToolAdapter alongside local tools
+      4. Call an MCP tool through the ToolRegistry (end-to-end pipe)
+
+    All assertions are concrete — if the MCP stack is broken, these fail.
+    """
+
+    # ── Helpers ──────────────────────────────────────────────────────────────
+
+    def _local_http_server(self):
+        """Start a local HTTP server; return (server, url)."""
+        body = b"<html><body><h1>Smoketest MCP Fetch</h1></body></html>"
+
+        class _H(_Handler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(body)
+            def log_message(self, *a): pass
+
+        srv = _HTTPServer(("127.0.0.1", 0), _H)
+        port = srv.server_address[1]
+        t = _threading.Thread(target=srv.serve_forever)
+        t.daemon = True
+        t.start()
+        return srv, f"http://127.0.0.1:{port}/"
+
+    # ── Tests ─────────────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_connect_echo_server_and_call_tool(self):
+        """Full stdio transport: spawn FastMCP server, echo tool returns input."""
+        from nexus.mcp.client import MCPClient
+        from nexus.types import MCPServerConfig
+        cfg = MCPServerConfig(
+            id="smoke-echo", tenant_id=TENANT, name="nexus-test-echo-server",
+            url="", transport="stdio", command=_sys.executable,
+            args=[_ECHO_SERVER],
+        )
+        client = MCPClient()
+        try:
+            defs = await client.connect(cfg)
+            assert any(d.name == "mcp_nexus_test_echo_server_echo" for d in defs), (
+                f"echo tool not found in {[d.name for d in defs]}"
+            )
+            result = await client.call_tool(cfg.id, "mcp_nexus_test_echo_server_echo", {"text": "smoke"})
+            assert result == {"result": "smoke"}
+        finally:
+            await client.disconnect_all()
+
+    @pytest.mark.asyncio
+    async def test_connect_fetch_server_and_fetch_local_url(self):
+        """mcp-server-fetch (modelcontextprotocol): fetches content from local HTTP server."""
+        from nexus.mcp.client import MCPClient
+        from nexus.types import MCPServerConfig
+        srv, url = self._local_http_server()
+        try:
+            cfg = MCPServerConfig(
+                id="smoke-fetch", tenant_id=TENANT, name="mcp-server-fetch",
+                url="", transport="stdio", command=_sys.executable,
+                args=[_FETCH_SERVER, "--ignore-robots-txt"],
+            )
+            client = MCPClient()
+            try:
+                defs = await client.connect(cfg)
+                assert any(d.name == "mcp_mcp_server_fetch_fetch" for d in defs), (
+                    f"fetch tool not found in {[d.name for d in defs]}"
+                )
+                result = await client.call_tool(
+                    cfg.id, "mcp_mcp_server_fetch_fetch",
+                    {"url": url, "max_length": 200},
+                )
+                assert "Smoketest MCP Fetch" in str(result), (
+                    f"Expected page content in result: {str(result)[:200]}"
+                )
+            finally:
+                await client.disconnect_all()
+        finally:
+            srv.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_adapter_registers_mcp_tools_with_correct_source(self):
+        """MCPToolAdapter.register_server() stores tools with source='mcp' in registry."""
+        from nexus.mcp.adapter import MCPToolAdapter
+        from nexus.tools.registry import ToolRegistry
+        from nexus.types import MCPServerConfig
+        registry = ToolRegistry()
+        adapter = MCPToolAdapter(registry)
+        cfg = MCPServerConfig(
+            id="smoke-adapter", tenant_id=TENANT, name="nexus-test-echo-server",
+            url="", transport="stdio", command=_sys.executable,
+            args=[_ECHO_SERVER],
+        )
+        try:
+            await adapter.register_server(TENANT, cfg)
+            mcp_tools = registry.get_by_source("mcp")
+            assert len(mcp_tools) == 3
+            assert all(t.name.startswith("mcp_nexus_test_echo_server_") for t in mcp_tools)
+        finally:
+            await adapter._client.disconnect_all()
+
+    @pytest.mark.asyncio
+    async def test_registry_mcp_tool_callable_end_to_end(self):
+        """Tool retrieved from ToolRegistry calls the real MCP subprocess and returns result."""
+        from nexus.mcp.adapter import MCPToolAdapter
+        from nexus.tools.registry import ToolRegistry
+        from nexus.types import MCPServerConfig
+        registry = ToolRegistry()
+        adapter = MCPToolAdapter(registry)
+        cfg = MCPServerConfig(
+            id="smoke-e2e", tenant_id=TENANT, name="nexus-test-echo-server",
+            url="", transport="stdio", command=_sys.executable,
+            args=[_ECHO_SERVER],
+        )
+        try:
+            await adapter.register_server(TENANT, cfg)
+            _, impl = registry.get("mcp_nexus_test_echo_server_add")
+            result = await impl(a=21, b=21)
+            assert result == {"result": 42}, f"Expected 42, got: {result}"
+        finally:
+            await adapter._client.disconnect_all()

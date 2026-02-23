@@ -320,8 +320,8 @@ NEXUS v2 transforms the single-shot agent framework into a **persistent, trigger
 | 15 | Foundation v2 — exception hierarchy, config fields, ORM models | ✅ Done |
 | 16 | Workflow DAG Definition — step types, branching, loops, versioning | ✅ Done |
 | 17 | DAG Execution Engine — parallel steps, branch, loop, sub-workflow, approval | ✅ Done |
-| 18 | Credential Vault — Fernet-encrypted secrets, OAuth2, runtime injection | 🔲 Planned |
-| 19 | MCP Integration — Model Context Protocol client + tool adapter | 🔲 Planned |
+| 18 | Credential Vault — Fernet-encrypted secrets, OAuth2, runtime injection | ✅ Done |
+| 19 | MCP Integration — Model Context Protocol client + tool adapter | ✅ Done |
 | 20 | Universal HTTP Tool — REST caller with auth injection + response mapping | 🔲 Planned |
 | 21 | Code Sandbox v2 — Python/JS with pip/npm, memory/CPU hard limits | 🔲 Planned |
 | 22 | Trigger System — webhooks, cron scheduler, event bus | 🔲 Planned |

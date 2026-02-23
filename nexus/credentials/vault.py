@@ -258,6 +258,60 @@ class CredentialVault:
 
         return merged
 
+    def get_env_vars(
+        self,
+        credential_id: str,
+        tenant_id: str,
+        persona_name: str = "",
+    ) -> dict[str, str]:
+        """Decrypt a credential and return it as environment variable key-value pairs.
+
+        Used by MCPToolAdapter to inject credentials into MCP server subprocess
+        environments before spawning — credentials never appear in the ledger.
+
+        Mapping by credential type:
+
+        * ``custom``       → all keys from data (use env var names as keys, e.g.
+                             ``{"UPSTASH_REDIS_REST_URL": "...", ...}``)
+        * ``api_key``      → ``{"API_KEY": "<value>"}``
+        * ``oauth2``       → ``{"ACCESS_TOKEN": "<value>"}``
+        * ``bearer_token`` → ``{"BEARER_TOKEN": "<value>"}``
+        * ``basic_auth``   → ``{"USERNAME": "<value>", "PASSWORD": "<value>"}``
+
+        Returns:
+            Dict of env var name → string value suitable for ``os.environ`` merging.
+
+        Raises:
+            CredentialNotFound: unknown credential or tenant mismatch.
+            CredentialError: persona scope / expiry checks fail.
+        """
+        record = self._store.get(credential_id)
+        if record is None or record.tenant_id != tenant_id:
+            raise CredentialNotFound(
+                f"Credential '{credential_id}' not found",
+                credential_id=credential_id,
+            )
+
+        data = self.retrieve(credential_id, tenant_id, persona_name or None)
+        ctype = record.credential_type
+
+        if ctype == CredentialType.CUSTOM:
+            # Keys are the exact env var names the MCP server expects.
+            return {k: str(v) for k, v in data.items()}
+        elif ctype == CredentialType.API_KEY:
+            return {"API_KEY": str(data.get("api_key", ""))}
+        elif ctype == CredentialType.OAUTH2:
+            return {"ACCESS_TOKEN": str(data.get("access_token", ""))}
+        elif ctype == CredentialType.BEARER_TOKEN:
+            return {"BEARER_TOKEN": str(data.get("token", ""))}
+        elif ctype == CredentialType.BASIC_AUTH:
+            return {
+                "USERNAME": str(data.get("username", "")),
+                "PASSWORD": str(data.get("password", "")),
+            }
+        # Fallback: treat all data keys as env vars
+        return {k: str(v) for k, v in data.items()}
+
     async def refresh_oauth2(
         self,
         credential_id: str,

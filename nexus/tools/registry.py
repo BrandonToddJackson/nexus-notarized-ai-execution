@@ -12,16 +12,49 @@ class ToolRegistry:
     def __init__(self):
         self._tools: dict[str, ToolDefinition] = {}
         self._implementations: dict[str, Callable[..., Any]] = {}
+        self._sources: dict[str, str] = {}  # tool_name → source label
 
-    def register(self, definition: ToolDefinition, implementation: Callable[..., Any]) -> None:
+    def register(
+        self,
+        definition: ToolDefinition,
+        implementation: Callable[..., Any],
+        source: str = "local",
+    ) -> None:
         """Register a tool with its definition and implementation function.
 
         Args:
             definition: Tool metadata and schema
             implementation: Async callable that executes the tool
+            source: Origin label, e.g. ``"local"`` or ``"mcp"``
         """
         self._tools[definition.name] = definition
         self._implementations[definition.name] = implementation
+        self._sources[definition.name] = source
+
+    def unregister(self, name: str) -> None:
+        """Remove a tool from the registry.
+
+        Args:
+            name: Tool name to remove.  No-ops if the tool is not registered.
+        """
+        self._tools.pop(name, None)
+        self._implementations.pop(name, None)
+        self._sources.pop(name, None)
+
+    def get_by_source(self, source: str) -> list[ToolDefinition]:
+        """Return all tools registered with a given source label.
+
+        Args:
+            source: Source label, e.g. ``"local"`` or ``"mcp"``.
+
+        Returns:
+            List of ToolDefinitions registered from that source.
+        """
+        return [
+            self._tools[name]
+            for name, src in self._sources.items()
+            if src == source and name in self._tools
+        ]
 
     def get(self, name: str) -> tuple[ToolDefinition, Callable[..., Any]]:
         """Get tool definition and implementation.
