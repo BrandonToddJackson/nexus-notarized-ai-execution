@@ -301,8 +301,9 @@ class TriggerConfig(BaseModel):
     tenant_id: str
     trigger_type: TriggerType
     enabled: bool = True
-    # config keys: cron_expression, webhook_path, event_name, source_workflow_id
+    # config keys: cron_expression, event_name, source_workflow_id
     config: dict[str, Any] = Field(default_factory=dict)
+    webhook_path: Optional[str] = None
     last_triggered_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

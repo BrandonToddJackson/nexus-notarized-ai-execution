@@ -10,8 +10,9 @@ from sqlalchemy import select, func
 
 from nexus.db.models import (
     TenantModel, PersonaModel, SealModel, ChainModel, CostModel, KnowledgeDocModel,
+    TriggerModel,
 )
-from nexus.types import Seal, ChainPlan, CostRecord, KnowledgeDocument
+from nexus.types import Seal, ChainPlan, CostRecord, KnowledgeDocument, TriggerConfig, TriggerType
 
 
 class Repository:
@@ -259,3 +260,115 @@ class Repository:
             query = query.where(KnowledgeDocModel.namespace == namespace)
         result = await self.session.execute(query)
         return list(result.scalars().all())
+
+    # ── Triggers ──
+    @staticmethod
+    def _model_to_trigger(m: TriggerModel) -> TriggerConfig:
+        """Convert a TriggerModel ORM row to a TriggerConfig Pydantic model."""
+        return TriggerConfig(
+            id=m.id,
+            workflow_id=m.workflow_id,
+            tenant_id=m.tenant_id,
+            trigger_type=TriggerType(m.trigger_type),
+            enabled=m.enabled,
+            config=m.config or {},
+            webhook_path=m.webhook_path,
+            last_triggered_at=m.last_triggered_at,
+            created_at=m.created_at,
+        )
+
+    async def save_trigger(self, trigger: TriggerConfig) -> TriggerConfig:
+        """Persist a new trigger."""
+        record = TriggerModel(
+            id=trigger.id,
+            workflow_id=trigger.workflow_id,
+            tenant_id=trigger.tenant_id,
+            trigger_type=trigger.trigger_type.value,
+            enabled=trigger.enabled,
+            config=trigger.config,
+            webhook_path=trigger.webhook_path,
+            last_triggered_at=trigger.last_triggered_at,
+            created_at=trigger.created_at,
+        )
+        self.session.add(record)
+        await self.session.commit()
+        await self.session.refresh(record)
+        return self._model_to_trigger(record)
+
+    async def get_trigger(self, tenant_id: str, trigger_id: str) -> Optional[TriggerConfig]:
+        """Get trigger by ID within tenant."""
+        result = await self.session.execute(
+            select(TriggerModel).where(
+                TriggerModel.id == trigger_id,
+                TriggerModel.tenant_id == tenant_id,
+            )
+        )
+        m = result.scalar_one_or_none()
+        return self._model_to_trigger(m) if m is not None else None
+
+    async def get_trigger_by_webhook_path(self, webhook_path: str) -> Optional[TriggerConfig]:
+        """Look up a trigger by its unique webhook path."""
+        result = await self.session.execute(
+            select(TriggerModel).where(TriggerModel.webhook_path == webhook_path)
+        )
+        m = result.scalar_one_or_none()
+        return self._model_to_trigger(m) if m is not None else None
+
+    async def list_triggers(
+        self,
+        tenant_id: Optional[str],
+        workflow_id: Optional[str] = None,
+        enabled: Optional[bool] = None,
+    ) -> list[TriggerConfig]:
+        """List triggers with optional filters.
+
+        ``tenant_id=None`` returns triggers across all tenants (used by CronScheduler startup).
+        """
+        conditions = []
+        if tenant_id is not None:
+            conditions.append(TriggerModel.tenant_id == tenant_id)
+        if workflow_id is not None:
+            conditions.append(TriggerModel.workflow_id == workflow_id)
+        if enabled is not None:
+            conditions.append(TriggerModel.enabled == enabled)
+
+        query = select(TriggerModel)
+        if conditions:
+            query = query.where(*conditions)
+        result = await self.session.execute(query)
+        return [self._model_to_trigger(m) for m in result.scalars().all()]
+
+    async def update_trigger(self, trigger: TriggerConfig) -> TriggerConfig:
+        """Persist changes to an existing trigger (full replace)."""
+        result = await self.session.execute(
+            select(TriggerModel).where(TriggerModel.id == trigger.id)
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            # Fallback: insert if somehow missing
+            return await self.save_trigger(trigger)
+        record.workflow_id       = trigger.workflow_id
+        record.tenant_id         = trigger.tenant_id
+        record.trigger_type      = trigger.trigger_type.value
+        record.enabled           = trigger.enabled
+        record.config            = trigger.config
+        record.webhook_path      = trigger.webhook_path
+        record.last_triggered_at = trigger.last_triggered_at
+        await self.session.commit()
+        await self.session.refresh(record)
+        return self._model_to_trigger(record)
+
+    async def delete_trigger(self, tenant_id: str, trigger_id: str) -> bool:
+        """Delete a trigger.  Returns True if deleted, False if not found."""
+        result = await self.session.execute(
+            select(TriggerModel).where(
+                TriggerModel.id == trigger_id,
+                TriggerModel.tenant_id == tenant_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return False
+        await self.session.delete(record)
+        await self.session.commit()
+        return True

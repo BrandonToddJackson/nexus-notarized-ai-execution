@@ -91,6 +91,7 @@ class NexusEngine:
         config: NexusConfig = None,
         callbacks: list = None,
         workflow_manager=None,  # Phase 17
+        event_bus=None,  # Phase 22
     ):
         self.persona_manager = persona_manager
         self.anomaly_engine = anomaly_engine
@@ -111,6 +112,7 @@ class NexusEngine:
         self.config = config or NexusConfig()
         self.callbacks = callbacks or []
         self.workflow_manager = workflow_manager  # Phase 17
+        self._event_bus = event_bus  # Phase 22
 
     async def run(self, task: str, tenant_id: str, persona_name: str = None, callbacks: list = None) -> ChainPlan:
         """FULL EXECUTION LOOP.
@@ -766,6 +768,16 @@ class NexusEngine:
                 "chain_id": chain.id,
                 "step_count": step_index_counter[0],
             })
+            if self._event_bus is not None:
+                try:
+                    await self._event_bus.emit("workflow.completed", {
+                        "workflow_id": workflow_id,
+                        "execution_id": execution.id,
+                        "tenant_id": execution.tenant_id,
+                        "result": execution.step_results,
+                    })
+                except Exception:
+                    logger.exception("EventBus.emit(workflow.completed) failed — non-fatal")
 
         except (WorkflowNotFound, WorkflowValidationError):
             raise
@@ -783,6 +795,16 @@ class NexusEngine:
                 "chain_id": chain.id,
                 "error": str(exc),
             })
+            if self._event_bus is not None:
+                try:
+                    await self._event_bus.emit("workflow.failed", {
+                        "workflow_id": workflow_id,
+                        "execution_id": execution.id,
+                        "tenant_id": execution.tenant_id,
+                        "error": str(exc),
+                    })
+                except Exception:
+                    logger.exception("EventBus.emit(workflow.failed) failed — non-fatal")
             raise
 
         return execution

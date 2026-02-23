@@ -141,8 +141,13 @@ async def lifespan(app: FastAPI):
     continue_complete_gate = ContinueCompleteGate()
     escalate_gate = EscalateGate()
 
-    # 10. NexusEngine
+    # 10. NexusEngine (event_bus injected below — forward reference resolved via set_event_bus)
     from nexus.core.engine import NexusEngine
+    from nexus.triggers import EventBus, TriggerManager, CronScheduler, WebhookHandler
+    from nexus.workflows.manager import WorkflowManager
+
+    event_bus = EventBus()
+
     engine = NexusEngine(
         persona_manager=persona_manager,
         anomaly_engine=anomaly_engine,
@@ -160,8 +165,26 @@ async def lifespan(app: FastAPI):
         escalate_gate=escalate_gate,
         llm_client=llm_client,
         config=config,
+        event_bus=event_bus,
     )
     app.state.engine = engine
+
+    # 11. Trigger system
+    async with async_session() as trigger_session:
+        from nexus.db.repository import Repository as TriggerRepo
+        trigger_repo = TriggerRepo(trigger_session)
+        workflow_manager = WorkflowManager(repository=trigger_repo, config=config)
+        trigger_manager = TriggerManager(engine, workflow_manager, trigger_repo, event_bus, config)
+        cron_scheduler = CronScheduler(trigger_manager, config)
+        webhook_handler = WebhookHandler(trigger_manager, trigger_repo)
+        trigger_manager.set_cron_scheduler(cron_scheduler)
+        await cron_scheduler.start()
+
+    app.state.event_bus        = event_bus
+    app.state.workflow_manager = workflow_manager
+    app.state.trigger_manager  = trigger_manager
+    app.state.webhook_handler  = webhook_handler
+    app.state.cron_scheduler   = cron_scheduler
 
     logger.info(f"NEXUS v{__version__} ready — {len(tool_registry.list_tools())} tools registered")
 
@@ -169,6 +192,7 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown ──
     logger.info("NEXUS shutting down...")
+    await cron_scheduler.stop()
     await redis_client.close()
 
 

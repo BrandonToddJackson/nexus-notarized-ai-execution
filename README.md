@@ -1,5 +1,7 @@
 # NEXUS — Notarized AI Execution
 
+> **Not multi-agent.** One agent, multiple personas. A persona is a constrained operating mode — not a separate entity.
+
 > **The agent framework where AI actions are accountable.**
 
 Every AI action is declared, verified, and sealed in an immutable ledger before execution. If it looks wrong, it's blocked.
@@ -57,6 +59,20 @@ flowchart LR
 ```
 
 If **any** gate fails → action is **BLOCKED** and sealed as blocked in the ledger.
+
+## Single engine vs multi-agent (first principles)
+
+Research often shows that multiple specialized agents outperform a single agent on some tasks. NEXUS does **not** claim the single engine always wins on raw capability or throughput. It claims a **different tradeoff** and challenges the assumption that you need multiple agents to get specialization and safety.
+
+| Dimension | Multi-agent frameworks | NEXUS (one engine, multiple personas) |
+|-----------|------------------------|----------------------------------------|
+| **Specialization** | Separate agents, separate LLM calls | One orchestrator; personas = constrained modes (allowed tools, intent patterns, TTL, drift). Same “brain,” different contracts. |
+| **Auditability** | Scattered logs; no single chain of custody | One ledger, one notary, every action sealed. Easier to prove what happened. |
+| **Throughput** | N agents ⇒ N concurrent tasks (at scale) | One chain at a time per engine instance. Scale out by running more instances. |
+| **Workflows with multiple personas** | Natural: assign agents to steps | **Supported.** Each workflow step has a `persona_name`; the engine activates that persona for that step (scope, intent, TTL, drift). You can chain researcher → analyst → reviewer in one workflow. |
+| **Parallel processing** | Often implicit (concurrent agents) | **Supported where it matters.** DAG workflows can use **PARALLEL** steps: branches run concurrently via `asyncio.gather`, each with its own persona and full 4-gate pipeline. Sibling steps in the same DAG layer are currently run sequentially; use an explicit PARALLEL step when you want concurrency. |
+
+So: **Can the single engine “outperform” multi-agent?** On **safety, auditability, and a single chain of custody** — yes. On **raw task throughput or parallel “minds”** — no; we don’t pretend otherwise. We do support **multi-persona workflows** (different persona per step) and **parallel execution** (PARALLEL steps with multiple branches), so the single engine can still handle workflows that need several roles and concurrent work, without giving up one notarized trail.
 
 ## Quickstart
 
@@ -201,7 +217,7 @@ flowchart LR
     TR --> MCP_TOOLS
 ```
 
-**Not multi-agent.** One agent, multiple personas. A persona is a constrained operating mode — not a separate entity.
+Same model throughout: one agent, multiple personas (see top of README). Workflows can use **multiple personas** (per-step `persona_name`) and **parallel branches** (PARALLEL step type).
 
 ## Key Concepts
 
@@ -255,7 +271,7 @@ nexus/
 ├── workflows/      # DAG definition: dag.py, validator.py, manager.py (v2)
 ├── credentials/    # Credential vault: encryption.py (Fernet), vault.py (v2)
 ├── mcp/            # MCP client + tool adapter + credential injection (v2)
-├── triggers/       # Trigger system: webhook, cron, event bus (v2, planned)
+├── triggers/       # Trigger system: webhook, cron, event bus, workflow-complete chaining (v2)
 ├── db/             # ORM models (v1 + v2), repository, Alembic migrations
 ├── llm/            # litellm integration + cost tracking + multi-provider routing
 ├── cache/          # Redis: fingerprint store, rate limiting, distributed locks
@@ -268,7 +284,7 @@ frontend/           # React dashboard (Vite, port 5173) — 17 source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (1213 tests — phases 0-21 + TypeScript)
+tests/              # pytest suite (1276 tests — phases 0-22)
 ```
 
 ## CLI
@@ -428,7 +444,7 @@ flowchart LR
 | 19 | MCP Integration — Model Context Protocol client + tool adapter + credential injection | ✅ Done |
 | 20 | Universal HTTP Tool + Data Transform — REST caller (auth/pagination/retry/JMESPath) + 15-op pipeline | ✅ Done |
 | 21 | Code Sandbox v2 — Python/JS/TypeScript subprocess isolation, tsx cache, process-group kill | ✅ Done |
-| 22 | Trigger System — webhooks, cron scheduler, event bus | 🔲 Planned |
+| 22 | Trigger System — webhooks, cron scheduler, event bus, workflow-complete chaining | ✅ Done |
 | 23 | NL Workflow Generation — natural language → DAG via LLM | 🔲 Planned |
 | 24 | Visual Canvas — React Flow drag-and-drop workflow editor | 🔲 Planned |
 | 25–32 | Frontend v2, background workers, plugin marketplace, Alembic v2 migrations, docs | 🔲 Planned |
