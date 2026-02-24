@@ -122,7 +122,7 @@ def _make_generator(
 
     # WorkflowManager mock with a REAL validator
     mock_wm = MagicMock()
-    mock_wm.validator = WorkflowValidator()
+    mock_wm._validator = WorkflowValidator()
 
     async def _mock_create(tenant_id, name, description, steps, edges, **kwargs):
         return WorkflowDefinition(

@@ -41,6 +41,10 @@ dev = [
     "ruff>=0.2.0",
     "mypy>=1.8.0",
     "httpx[http2]",
+    "aiosqlite>=0.19",
+    "fakeredis[aioredis]>=2.23",
+    "respx>=0.21",
+    "freezegun>=1.5",
 ]
 
 [project.scripts]

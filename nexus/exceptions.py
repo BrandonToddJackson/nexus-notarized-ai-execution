@@ -142,3 +142,52 @@ class AmbiguityResolutionError(NexusError):
     session expired.
     """
     pass
+
+
+# ── Phase 30: Additional v2 exceptions ───────────────────────────────────────
+
+
+class WorkflowStateError(WorkflowError):
+    """Invalid workflow state transition (e.g., pausing a DRAFT workflow)."""
+    pass
+
+
+class WorkflowVersionNotFoundError(WorkflowError):
+    """Requested workflow version does not exist in the version history."""
+    pass
+
+
+class WorkflowImportError(WorkflowError):
+    """Malformed or incompatible workflow import payload."""
+    pass
+
+
+class WebhookNotFoundError(TriggerError):
+    """No trigger registered for the given webhook path."""
+    def __init__(self, message: str, path: str = ""):
+        super().__init__(message, trigger_type="webhook")
+        self.path = path
+
+
+class TriggerDisabledError(TriggerError):
+    """Trigger exists but is currently disabled."""
+    pass
+
+
+class CredentialExpiredError(CredentialError):
+    """Credential has passed its expires_at timestamp."""
+    def __init__(self, message: str, credential_id: str = "", expired_at=None):
+        super().__init__(message, credential_id=credential_id)
+        self.expired_at = expired_at
+
+
+class SandboxTimeoutError(SandboxError):
+    """Sandbox execution exceeded the configured timeout."""
+    def __init__(self, message: str, timeout_seconds: float = 0):
+        super().__init__(message)
+        self.timeout_seconds = timeout_seconds
+
+
+class SandboxSecurityError(SandboxError):
+    """Sandbox code attempted a forbidden operation (e.g., forbidden import)."""
+    pass

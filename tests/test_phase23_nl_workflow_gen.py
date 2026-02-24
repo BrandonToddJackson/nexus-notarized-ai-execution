@@ -502,7 +502,7 @@ class TestWorkflowGeneratorRefine:
 
     @pytest.mark.asyncio
     async def test_invalid_dag_raises(self, mock_llm, mock_tool_registry, mock_persona_manager, mock_workflow_manager):
-        mock_workflow_manager.validator.validate = MagicMock(
+        mock_workflow_manager._validator.validate = MagicMock(
             return_value=["Cycle detected in workflow graph."]
         )
         gen = make_generator(mock_llm, mock_tool_registry, mock_persona_manager, mock_workflow_manager)

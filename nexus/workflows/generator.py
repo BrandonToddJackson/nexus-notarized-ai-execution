@@ -458,7 +458,7 @@ class WorkflowGenerator:
 
         # Build candidate object for full DAG validation
         candidate = self._raw_json_to_workflow_definition(raw_json, tenant_id="__validate__")
-        validation_errors = self._workflow_manager.validator.validate(candidate)
+        validation_errors = self._workflow_manager._validator.validate(candidate)
         hard_errors = [e for e in validation_errors if not e.startswith("WARNING:")]
         if hard_errors:
             raise WorkflowGenerationError(
@@ -578,7 +578,7 @@ class WorkflowGenerator:
             )
 
         candidate = self._raw_json_to_workflow_definition(raw_json, tenant_id=tenant_id)
-        validation_errors = self._workflow_manager.validator.validate(candidate)
+        validation_errors = self._workflow_manager._validator.validate(candidate)
         hard_errors = [e for e in validation_errors if not e.startswith("WARNING:")]
         if hard_errors:
             raise WorkflowGenerationError(

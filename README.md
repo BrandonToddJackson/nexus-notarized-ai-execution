@@ -291,7 +291,7 @@ frontend/           # React dashboard (Vite, port 5173) — 57+ source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (1846 tests — phases 0-29)
+tests/              # pytest suite (1959 tests — phases 0-30; + 5 slow Ollama tests)
 ```
 
 ## CLI
@@ -397,7 +397,7 @@ NEXUS is designed for production agentic workloads. Security hardening applied a
 
 **Infrastructure**
 - Redis pinned to `7.4-alpine` (mitigates CVE-2025-49844 Lua RCE present in unversioned `7-alpine`); port not exposed externally
-- LLM calls wrapped in 30-second timeout — runaway generation blocked
+- LLM calls: 30s timeout for cloud providers; 120s for local Ollama models (accounts for model-swap latency); `num_ctx=8192` prevents silent prompt truncation — runaway generation blocked
 - In-memory ledger capped at 10,000 seals — OOM via audit trail eliminated
 
 **HTTP Hardening**
@@ -507,7 +507,9 @@ flowchart LR
 | 27 | Plugin Marketplace — `nexus-plugin-*` PyPI ecosystem, `PluginManifest` + `@nexus_plugin_tool` SDK, `PluginRegistry` (install/upgrade/verify), 15-threat CVE security model, `nexus plugin` CLI (7 sub-commands) | ✅ Done |
 | 28 | Persistence v2 — Alembic migrations (async), 15 new repository methods (workflow/credential/MCP CRUD), seed v2 data, `CredentialModel.is_active`, `MCPServerModel.url` nullable | ✅ Done |
 | 29 | API v2 Complete — triggers CRUD, webhook catch-all (no JWT), marketplace endpoints, workflow lifecycle (activate/pause/versions/rollback/refine/explain), execution SSE stream + delete, job result, MCP refresh | ✅ Done |
-| 30–32 | Test suite v2, infrastructure v2, examples & docs v2 | 🔲 Planned |
+| 30 | Test suite v2 — 113 fast tests across 8 new files (workflows, dag_engine, credentials, mcp, triggers, http_tool, code_sandbox, api_v2) + 5 Ollama live-LLM tests; bugs fixed in `generator.py` (._validator), Ollama client (num_ctx=8192, 120s timeout) | ✅ Done |
+| 31 | Infrastructure v2 — worker/scheduler Docker services, nginx config | 🔲 Planned |
+| 32 | Examples & Docs v2 — Slack→Sheets, email classifier, scheduled report, MCP GitHub examples | 🔲 Planned |
 
 See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.
 

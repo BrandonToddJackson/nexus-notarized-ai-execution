@@ -118,8 +118,14 @@ class LLMClient:
                 kwargs["response_format"] = response_format
             if is_local_model(self.model):
                 kwargs["api_base"] = config.ollama_base_url
+                # Cap output tokens — workflow JSON rarely exceeds 1000 tokens; 2000 gives safe margin
+                if max_tokens is None:
+                    kwargs["max_tokens"] = config.ollama_max_tokens
+                # Expand context window — Ollama default (2048) silently truncates large system prompts
+                kwargs["extra_body"] = {"options": {"num_ctx": config.ollama_num_ctx}}
 
-            response = await asyncio.wait_for(litellm.acompletion(**kwargs), timeout=30)
+            _timeout = 120 if is_local_model(self.model) else 30
+            response = await asyncio.wait_for(litellm.acompletion(**kwargs), timeout=_timeout)
 
             choice = response.choices[0]
             return {

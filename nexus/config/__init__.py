@@ -41,6 +41,8 @@ class NexusConfig(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"   # Ollama API endpoint
     ollama_code_model: str = "ollama/qwen2.5-coder:7b"   # code gen, tool use, agentic tasks
     ollama_vision_model: str = "ollama/qwen2.5vl:7b"     # general purpose + multimodal
+    ollama_num_ctx: int = 8192    # context window for local models (default 2048 causes silent truncation)
+    ollama_max_tokens: int = 2000 # output token cap for local models (4096 is wasteful for structured JSON)
 
     # ── Embeddings ──
     embedding_model: str = "all-MiniLM-L6-v2"  # sentence-transformers model
