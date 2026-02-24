@@ -122,3 +122,13 @@ class MCPToolError(ToolError):
 class SandboxError(ToolError):
     """Code sandbox execution failed (memory limit, timeout, forbidden import)."""
     pass
+
+
+class AmbiguityResolutionError(NexusError):
+    """
+    Raised when AmbiguityResolver cannot proceed.
+
+    Reasons: session not found, session not active, answer validation failure,
+    session expired.
+    """
+    pass

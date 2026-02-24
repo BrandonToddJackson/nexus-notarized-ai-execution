@@ -4,6 +4,9 @@ This is the ONLY layer that talks to the database.
 All methods take tenant_id for isolation.
 """
 
+from __future__ import annotations
+
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -12,7 +15,17 @@ from nexus.db.models import (
     TenantModel, PersonaModel, SealModel, ChainModel, CostModel, KnowledgeDocModel,
     TriggerModel,
 )
-from nexus.types import Seal, ChainPlan, CostRecord, KnowledgeDocument, TriggerConfig, TriggerType
+from nexus.types import (
+    AmbiguitySession, Seal, ChainPlan, CostRecord, KnowledgeDocument, TriggerConfig, TriggerType,
+)
+
+
+def _plan_to_json(plan) -> dict | None:
+    """Serialize a WorkflowPlan to a JSON-safe dict (datetime → ISO string)."""
+    if plan is None:
+        return None
+    import json
+    return json.loads(plan.model_dump_json())
 
 
 class Repository:
@@ -372,3 +385,134 @@ class Repository:
         await self.session.delete(record)
         await self.session.commit()
         return True
+
+    # ── Ambiguity Sessions (Phase 23.1) ──
+
+    async def create_ambiguity_session(self, session_obj) -> AmbiguitySession:
+        """Persist a new AmbiguitySession."""
+        from nexus.db.models import AmbiguitySessionModel
+        model = AmbiguitySessionModel(
+            id=session_obj.id,
+            tenant_id=session_obj.tenant_id,
+            original_description=session_obj.original_description,
+            status=session_obj.status.value,
+            questions_json=[q.model_dump() for q in session_obj.questions],
+            answers_json=[a.model_dump() for a in session_obj.answers],
+            current_round=session_obj.current_round,
+            max_rounds=session_obj.max_rounds,
+            specificity_history_json=session_obj.specificity_history,
+            plan_json=_plan_to_json(session_obj.plan),
+            created_at=session_obj.created_at,
+            updated_at=session_obj.updated_at,
+            expires_at=session_obj.expires_at,
+        )
+        self.session.add(model)
+        await self.session.commit()
+        return session_obj
+
+    async def get_ambiguity_session(self, session_id: str) -> Optional[AmbiguitySession]:
+        """Load an AmbiguitySession by ID. Returns None if not found."""
+        from nexus.db.models import AmbiguitySessionModel
+        from nexus.types import (
+            AmbiguitySession, AmbiguitySessionStatus, ClarifyingAnswer,
+            ClarifyingQuestion, WorkflowPlan,
+        )
+        result = await self.session.execute(
+            select(AmbiguitySessionModel).where(AmbiguitySessionModel.id == session_id)
+        )
+        model = result.scalar_one_or_none()
+        if not model:
+            return None
+        return AmbiguitySession(
+            id=model.id,
+            tenant_id=model.tenant_id,
+            original_description=model.original_description,
+            status=AmbiguitySessionStatus(model.status),
+            questions=[ClarifyingQuestion(**q) for q in (model.questions_json or [])],
+            answers=[ClarifyingAnswer(**a) for a in (model.answers_json or [])],
+            current_round=model.current_round,
+            max_rounds=model.max_rounds,
+            specificity_history=model.specificity_history_json or [],
+            plan=WorkflowPlan(**model.plan_json) if model.plan_json else None,
+            created_at=model.created_at,
+            updated_at=model.updated_at,
+            expires_at=model.expires_at,
+        )
+
+    async def update_ambiguity_session(
+        self, session_id: str, updates: dict
+    ) -> Optional[AmbiguitySession]:
+        """Apply partial updates to an existing AmbiguitySession."""
+        from nexus.db.models import AmbiguitySessionModel
+        result = await self.session.execute(
+            select(AmbiguitySessionModel).where(AmbiguitySessionModel.id == session_id)
+        )
+        model = result.scalar_one_or_none()
+        if not model:
+            raise ValueError(f"AmbiguitySession {session_id!r} not found for update.")
+
+        column_map = {
+            "status": "status",
+            "questions": "questions_json",
+            "answers": "answers_json",
+            "current_round": "current_round",
+            "specificity_history": "specificity_history_json",
+            "plan": "plan_json",
+            "updated_at": "updated_at",
+        }
+        for key, value in updates.items():
+            col = column_map.get(key, key)
+            if col == "status" and hasattr(value, "value"):
+                value = value.value
+            elif col == "plan_json" and value is not None and not isinstance(value, dict):
+                # value is a WorkflowPlan Pydantic model — serialize datetimes
+                import json as _json
+                value = _json.loads(value.model_dump_json())
+            setattr(model, col, value)
+
+        await self.session.commit()
+        return await self.get_ambiguity_session(session_id)
+
+    async def list_ambiguity_sessions(
+        self,
+        tenant_id: str,
+        status: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[AmbiguitySession]:
+        """List sessions for a tenant, optionally filtered by status. Newest first."""
+        from nexus.db.models import AmbiguitySessionModel
+        from sqlalchemy import desc
+        query = select(AmbiguitySessionModel).where(
+            AmbiguitySessionModel.tenant_id == tenant_id
+        )
+        if status:
+            query = query.where(AmbiguitySessionModel.status == status)
+        query = (
+            query.order_by(desc(AmbiguitySessionModel.created_at))
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self.session.execute(query)
+        models = result.scalars().all()
+        sessions = []
+        for model in models:
+            s = await self.get_ambiguity_session(model.id)
+            if s:
+                sessions.append(s)
+        return sessions
+
+    async def expire_abandoned_sessions(self, cutoff: datetime) -> int:
+        """Mark all active sessions with expires_at < cutoff as abandoned. Returns count updated."""
+        from nexus.db.models import AmbiguitySessionModel
+        from sqlalchemy import update as sql_update
+        result = await self.session.execute(
+            sql_update(AmbiguitySessionModel)
+            .where(
+                AmbiguitySessionModel.status == "active",
+                AmbiguitySessionModel.expires_at < cutoff,
+            )
+            .values(status="abandoned", updated_at=datetime.now(timezone.utc))
+        )
+        await self.session.commit()
+        return result.rowcount

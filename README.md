@@ -284,7 +284,7 @@ frontend/           # React dashboard (Vite, port 5173) — 17 source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (1276 tests — phases 0-22)
+tests/              # pytest suite (1499 tests — phases 0-23.1)
 ```
 
 ## CLI
@@ -445,7 +445,8 @@ flowchart LR
 | 20 | Universal HTTP Tool + Data Transform — REST caller (auth/pagination/retry/JMESPath) + 15-op pipeline | ✅ Done |
 | 21 | Code Sandbox v2 — Python/JS/TypeScript subprocess isolation, tsx cache, process-group kill | ✅ Done |
 | 22 | Trigger System — webhooks, cron scheduler, event bus, workflow-complete chaining | ✅ Done |
-| 23 | NL Workflow Generation — natural language → DAG via LLM | 🔲 Planned |
+| 23 | NL Workflow Generation — natural language → DAG via LLM, iterative refinement, explain | ✅ Done |
+| 23.1 | Ambiguity Resolution — multi-round clarification sessions, specificity scoring, plan sealing | ✅ Done |
 | 24 | Visual Canvas — React Flow drag-and-drop workflow editor | 🔲 Planned |
 | 25–32 | Frontend v2, background workers, plugin marketplace, Alembic v2 migrations, docs | 🔲 Planned |
 

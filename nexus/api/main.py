@@ -186,6 +186,23 @@ async def lifespan(app: FastAPI):
     app.state.webhook_handler  = webhook_handler
     app.state.cron_scheduler   = cron_scheduler
 
+    # 12. AmbiguityResolver + WorkflowGenerator (Phase 23.1)
+    from nexus.workflows.ambiguity import AmbiguityResolver
+    from nexus.workflows.generator import WorkflowGenerator
+    app.state.ambiguity_resolver = AmbiguityResolver(
+        llm_client=llm_client,
+        tool_registry=tool_registry,
+        persona_manager=persona_manager,
+        config=config,
+    )
+    app.state.workflow_generator = WorkflowGenerator(
+        llm_client=llm_client,
+        tool_registry=tool_registry,
+        persona_manager=persona_manager,
+        workflow_manager=workflow_manager,
+        config=config,
+    )
+
     logger.info(f"NEXUS v{__version__} ready — {len(tool_registry.list_tools())} tools registered")
 
     yield
@@ -223,7 +240,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware)
 
     # Routes
-    from nexus.api.routes import execute, stream, ledger, personas, tools, knowledge, health, auth
+    from nexus.api.routes import execute, stream, ledger, personas, tools, knowledge, health, auth, workflows
     app.include_router(execute.router, prefix="/v1")
     app.include_router(stream.router, prefix="/v1")
     app.include_router(ledger.router, prefix="/v1")
@@ -232,6 +249,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router, prefix="/v1")
     app.include_router(health.router, prefix="/v1")
     app.include_router(auth.router, prefix="/v1")
+    app.include_router(workflows.router)
 
     return app
 

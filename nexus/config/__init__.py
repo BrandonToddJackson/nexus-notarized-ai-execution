@@ -122,6 +122,13 @@ class NexusConfig(BaseSettings):
     max_generation_refine_attempts: int = 3
     workflow_generation_model: Optional[str] = None
 
+    # ── Ambiguity Resolution (Phase 23.1) ──
+    ambiguity_auto_generate_threshold: float = 0.75
+    max_clarification_rounds: int = 3
+    ambiguity_session_ttl_hours: int = 24
+    ambiguity_generation_model: Optional[str] = None
+    max_questions_per_round: int = 5
+
     model_config = {"env_prefix": "NEXUS_", "env_file": ".env", "extra": "ignore"}
 
 

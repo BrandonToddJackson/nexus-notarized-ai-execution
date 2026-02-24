@@ -6,7 +6,7 @@ All tables have tenant_id for isolation. Indexes on common query patterns.
 
 from sqlalchemy import Column, String, Integer, Float, DateTime, JSON, Boolean, Text, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -22,7 +22,7 @@ class TenantModel(Base):
     budget_usd = Column(Float, default=50.0)
     budget_used_usd = Column(Float, default=0.0)
     settings = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     is_active = Column(Boolean, default=True)
 
 
@@ -39,7 +39,7 @@ class PersonaModel(Base):
     risk_tolerance = Column(String, default="medium")
     version = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (Index("ix_persona_tenant_name", "tenant_id", "name", unique=True),)
 
@@ -60,7 +60,7 @@ class SealModel(Base):
     cot_trace = Column(JSON, default=list)
     fingerprint = Column(String, nullable=False)
     parent_fingerprint = Column(String, default="")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime, nullable=True)
     error = Column(Text, nullable=True)
 
@@ -75,7 +75,7 @@ class ChainModel(Base):
     steps = Column(JSON, nullable=False)
     status = Column(String, default="planning")
     seal_ids = Column(JSON, default=list)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime, nullable=True)
     error = Column(Text, nullable=True)
 
@@ -90,7 +90,7 @@ class CostModel(Base):
     input_tokens = Column(Integer, default=0)
     output_tokens = Column(Integer, default=0)
     cost_usd = Column(Float, default=0.0)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class KnowledgeDocModel(Base):
@@ -102,7 +102,7 @@ class KnowledgeDocModel(Base):
     content_hash = Column(String, nullable=False)
     access_level = Column(String, default="internal")
     metadata_ = Column("metadata", JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (Index("ix_knowledge_tenant_ns", "tenant_id", "namespace"),)
 
@@ -121,8 +121,8 @@ class WorkflowModel(Base):
     trigger_config = Column(JSON, default=dict)
     steps = Column(JSON, default=list)              # serialized WorkflowStep list
     edges = Column(JSON, default=list)              # serialized WorkflowEdge list
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     created_by = Column(String, default="")
     tags = Column(JSON, default=list)
     settings = Column(JSON, default=dict)
@@ -143,7 +143,7 @@ class WorkflowExecutionModel(Base):
     trigger_data = Column(JSON, default=dict)
     chain_id = Column(String, default="")
     status = Column(String, default="planning")     # ChainStatus value
-    started_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime, nullable=True)
     error = Column(Text, nullable=True)
     step_results = Column(JSON, default=dict)
@@ -161,7 +161,7 @@ class TriggerModel(Base):
     config = Column(JSON, default=dict)
     webhook_path = Column(String, nullable=True, unique=True)
     last_triggered_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index("ix_trigger_tenant_enabled", "tenant_id", "enabled"),
@@ -178,13 +178,36 @@ class CredentialModel(Base):
     service_name = Column(String, nullable=False)
     encrypted_data = Column(Text, nullable=False)       # AES-256-GCM ciphertext
     scoped_personas = Column(JSON, default=list)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "name", name="uq_credential_tenant_name"),
         Index("ix_credential_tenant_service", "tenant_id", "service_name"),
+    )
+
+
+class AmbiguitySessionModel(Base):
+    """Persists an ambiguity clarification session. Added in Phase 23.1."""
+    __tablename__ = "ambiguity_sessions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
+    original_description = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="active")
+    questions_json = Column(JSON, nullable=False, default=list)
+    answers_json = Column(JSON, nullable=False, default=list)
+    current_round = Column(Integer, nullable=False, default=1)
+    max_rounds = Column(Integer, nullable=False, default=3)
+    specificity_history_json = Column(JSON, nullable=False, default=list)
+    plan_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_ambiguity_tenant_status", "tenant_id", "status"),
     )
 
 
@@ -201,7 +224,7 @@ class MCPServerModel(Base):
     enabled = Column(Boolean, default=True)
     discovered_tools = Column(JSON, default=list)
     last_connected_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "name", name="uq_mcp_tenant_name"),

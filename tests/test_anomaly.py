@@ -253,3 +253,103 @@ class TestCombinedGates:
         assert result.overall_verdict == GateVerdict.PASS
         skipped = [g for g in result.gates if g.verdict == GateVerdict.SKIP]
         assert len(skipped) >= 2  # Gate 2 + Gate 4 both SKIP
+
+
+# ── Gate 3: Exact boundary test ───────────────────────────────────────────────
+
+class TestGate3TTLBoundary:
+
+    def test_gate3_exact_boundary_fails(self):
+        """Exactly at TTL boundary (remaining = 0.0) must FAIL."""
+        engine = AnomalyEngine(_config())
+        persona = _researcher()  # max_ttl_seconds=60
+        # Activated exactly 60 seconds ago → remaining = 60 - 60 = 0.0 → FAIL
+        activation_time = datetime.now(timezone.utc) - timedelta(seconds=60)
+        result = engine._gate3_ttl(persona, activation_time)
+        assert result.gate_name == "ttl"
+        assert result.verdict == GateVerdict.FAIL
+        assert result.score == 0.0
+
+
+# ── Gate 1: Empty resource_targets design contract ────────────────────────────
+
+class TestGate1EmptyTargets:
+
+    def test_gate1_empty_targets_passes_when_tool_allowed(self):
+        """Design contract: empty resource_targets = no resource scope check.
+
+        If there are no resources to check, only the tool check applies.
+        Allowed tool + no resources → PASS.
+        """
+        engine = AnomalyEngine(_config())
+        persona = _researcher()  # allowed_tools includes knowledge_search
+        intent = _intent(tool="knowledge_search", resources=[])
+        result = engine._gate1_scope(persona, intent)
+        assert result.verdict == GateVerdict.PASS
+
+    def test_gate1_empty_targets_fails_when_tool_not_allowed(self):
+        """Disallowed tool with empty resource_targets still FAILs (tool check runs)."""
+        engine = AnomalyEngine(_config())
+        persona = _researcher()
+        intent = _intent(tool="send_email", resources=[])
+        result = engine._gate1_scope(persona, intent)
+        assert result.verdict == GateVerdict.FAIL
+        assert "send_email" in result.details
+
+
+# ── Gate 4: Async FingerprintCache interface ──────────────────────────────────
+
+class TestGate4WithAsyncStore:
+    """Gate 4 pre-fetches baseline asynchronously when store has get_baseline()."""
+
+    async def test_gate4_uses_async_get_baseline_when_available(self):
+        """When fingerprint_store has get_baseline(), it is awaited during check()."""
+        from unittest.mock import AsyncMock
+
+        # 12 identical fingerprints → freq={fp:12}, stdev=0 → sigma=0 → PASS
+        fp = AnomalyEngine.compute_fingerprint("knowledge_search", ["kb:docs"])
+        fingerprints = [fp] * 12
+
+        mock_store = AsyncMock()
+        mock_store.get_baseline = AsyncMock(return_value={
+            "fingerprints": fingerprints,
+            "sample_count": 12,
+            "frequency_map": {},
+        })
+
+        engine = AnomalyEngine(_config(), fingerprint_store=mock_store)
+        persona = _researcher()
+        intent = _intent(tool="knowledge_search", resources=["kb:docs"])
+        activation_time = datetime.now(timezone.utc) - timedelta(seconds=5)
+
+        result = await engine.check(
+            persona, intent, activation_time, tenant_id="tenant-1"
+        )
+
+        mock_store.get_baseline.assert_awaited_once_with("tenant-1", str(persona.id))
+        # 12 samples → Gate 4 does NOT skip
+        gate4 = next(g for g in result.gates if g.gate_name == "drift")
+        assert gate4.verdict != GateVerdict.SKIP
+
+    async def test_gate4_skips_when_get_baseline_returns_empty(self):
+        """When get_baseline returns empty list, Gate 4 SKIPs (< 10 samples)."""
+        from unittest.mock import AsyncMock
+
+        mock_store = AsyncMock()
+        mock_store.get_baseline = AsyncMock(return_value={
+            "fingerprints": [],
+            "sample_count": 0,
+            "frequency_map": {},
+        })
+
+        engine = AnomalyEngine(_config(), fingerprint_store=mock_store)
+        persona = _researcher()
+        intent = _intent(tool="knowledge_search", resources=["kb:docs"])
+        activation_time = datetime.now(timezone.utc) - timedelta(seconds=5)
+
+        result = await engine.check(
+            persona, intent, activation_time, tenant_id="tenant-1"
+        )
+
+        gate4 = next(g for g in result.gates if g.gate_name == "drift")
+        assert gate4.verdict == GateVerdict.SKIP

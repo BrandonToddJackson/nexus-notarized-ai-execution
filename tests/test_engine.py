@@ -11,7 +11,7 @@ import pytest
 
 from nexus.types import (
     PersonaContract, RiskLevel, ToolDefinition, RetrievedContext,
-    ChainStatus, ActionStatus,
+    ChainStatus, ActionStatus, TrustTier,
 )
 from nexus.exceptions import AnomalyDetected
 from nexus.config import NexusConfig
@@ -287,3 +287,248 @@ class TestNexusEngine:
 
         integrity_ok = await engine.ledger.verify_integrity(chain.id)
         assert integrity_ok is True
+
+    @pytest.mark.asyncio
+    async def test_callbacks_fired_with_correct_events(self, test_tenant_id):
+        """Verify that lifecycle callbacks are called with the correct event names and keys."""
+
+        events = []
+
+        async def collect(event, data):
+            events.append((event, data))
+
+        defn, fn = _knowledge_search_tool()
+        engine = _make_engine(
+            personas=[_researcher()],
+            tools={"knowledge_search": (defn, fn)},
+        )
+        await engine.run(
+            "search for NEXUS documentation", test_tenant_id, callbacks=[collect]
+        )
+
+        event_names = [e[0] for e in events]
+        assert "task_started" in event_names
+        assert "chain_created" in event_names
+        assert "step_started" in event_names
+        assert "anomaly_checked" in event_names
+        assert "step_completed" in event_names
+        assert "chain_completed" in event_names
+
+        # Verify anomaly_checked payload structure (used by SSE route)
+        anomaly_event = next(d for n, d in events if n == "anomaly_checked")
+        assert "chain_id" in anomaly_event
+        assert "gates" in anomaly_event
+        assert "step_index" in anomaly_event
+        assert isinstance(anomaly_event["gates"], list)
+        assert len(anomaly_event["gates"]) == 4
+
+        for gate in anomaly_event["gates"]:
+            assert "gate_name" in gate
+            assert "verdict" in gate
+            assert "score" in gate
+
+    @pytest.mark.asyncio
+    async def test_fingerprint_stored_after_successful_step(self, test_tenant_id):
+        """After a successful execution, fingerprint store.store() must be awaited."""
+        from unittest.mock import AsyncMock
+
+        mock_fp_store = AsyncMock()
+        mock_fp_store.store = AsyncMock()
+        # AsyncMock auto-creates all attributes; explicitly remove get_baseline so the
+        # engine falls back to the dict-check path (no async pre-fetch), step executes,
+        # and store() is called.
+        del mock_fp_store.get_baseline
+
+        defn, fn = _knowledge_search_tool()
+        engine = _make_engine(
+            personas=[_researcher()],
+            tools={"knowledge_search": (defn, fn)},
+        )
+        # Replace dict store with non-dict mock so the store() call path is taken
+        engine.anomaly_engine.fingerprint_store = mock_fp_store
+
+        await engine.run("search for NEXUS documentation", test_tenant_id)
+
+        mock_fp_store.store.assert_awaited()
+        call_args = mock_fp_store.store.call_args
+        assert call_args.args[0] == test_tenant_id  # tenant_id
+        assert isinstance(call_args.args[2], str) and len(call_args.args[2]) > 0  # fingerprint
+
+    @pytest.mark.asyncio
+    async def test_trust_degraded_after_gate_failure(self, test_tenant_id):
+        """ESTABLISHED persona that fails Gate 1 must be degraded to COLD_START."""
+        from nexus.exceptions import AnomalyDetected
+
+        # Create ESTABLISHED researcher persona
+        persona = PersonaContract(
+            name="researcher",
+            description="Searches information",
+            allowed_tools=["knowledge_search"],
+            resource_scopes=["kb:*"],
+            intent_patterns=["search for information"],
+            risk_tolerance=RiskLevel.LOW,
+            max_ttl_seconds=120,
+            trust_tier=TrustTier.ESTABLISHED,
+        )
+        # Only register send_email — researcher can't use it → Gate 1 FAIL
+        email_defn, email_fn = _send_email_tool()
+        engine = _make_engine(
+            personas=[persona],
+            tools={"send_email": (email_defn, email_fn)},
+        )
+
+        with pytest.raises(AnomalyDetected):
+            await engine.run(
+                "send email to user@example.com", test_tenant_id, persona_name="researcher"
+            )
+
+        # Trust tier must be degraded: ESTABLISHED → COLD_START
+        degraded = engine.persona_manager._contracts.get("researcher")
+        assert degraded is not None
+        assert degraded.trust_tier == TrustTier.COLD_START
+
+    @pytest.mark.asyncio
+    async def test_cost_tracker_called_with_correct_args(self, test_tenant_id):
+        """cost_tracker.record() is awaited with correct tenant_id and chain_id."""
+        from unittest.mock import AsyncMock
+
+        mock_cost_tracker = AsyncMock()
+        mock_cost_tracker.record = AsyncMock()
+
+        defn, fn = _knowledge_search_tool()
+        engine = _make_engine(
+            personas=[_researcher()],
+            tools={"knowledge_search": (defn, fn)},
+        )
+        engine.cost_tracker = mock_cost_tracker
+
+        await engine.run("search for NEXUS docs", test_tenant_id)
+
+        mock_cost_tracker.record.assert_awaited()
+        call_kwargs = mock_cost_tracker.record.call_args.kwargs
+        assert call_kwargs["tenant_id"] == test_tenant_id
+        assert isinstance(call_kwargs["chain_id"], str)
+        assert call_kwargs["model"] is not None
+
+    @pytest.mark.asyncio
+    async def test_retry_decision_reruns_same_step(self, test_tenant_id):
+        """When escalate_gate returns RETRY, the same step runs again."""
+        from nexus.types import ReasoningDecision
+        from nexus.exceptions import EscalationRequired, ToolError
+
+        defn, fn = _knowledge_search_tool()
+        engine = _make_engine(
+            personas=[_researcher()],
+            tools={"knowledge_search": (defn, fn)},
+        )
+
+        # Make tool_executor always raise ToolError
+        execute_call_count = [0]
+
+        async def always_fail(intent, **kwargs):
+            execute_call_count[0] += 1
+            raise ToolError("transient failure")
+
+        engine.tool_executor.execute = always_fail
+
+        # escalate_gate: RETRY on first exception, ESCALATE on second
+        decide_call_count = [0]
+
+        def controlled_decide(exc, retry_count, chain):
+            decide_call_count[0] += 1
+            if decide_call_count[0] == 1:
+                return ReasoningDecision.RETRY
+            return ReasoningDecision.ESCALATE
+
+        engine.escalate_gate.decide = controlled_decide
+
+        with pytest.raises(EscalationRequired):
+            await engine.run("test task", test_tenant_id)
+
+        # Step was attempted at least twice (initial + 1 retry)
+        assert execute_call_count[0] >= 2
+        assert decide_call_count[0] >= 2
+
+    @pytest.mark.asyncio
+    async def test_human_approval_timeout_raises_escalation(self, test_tenant_id):
+        """HUMAN_APPROVAL step with timeout_seconds=0 immediately raises EscalationRequired."""
+        from nexus.types import WorkflowStep, StepType, ChainPlan, ChainStatus
+        from nexus.exceptions import EscalationRequired
+
+        defn, fn = _knowledge_search_tool()
+        engine = _make_engine(
+            personas=[_researcher()],
+            tools={"knowledge_search": (defn, fn)},
+        )
+
+        chain = ChainPlan(
+            tenant_id=test_tenant_id,
+            task="approval test",
+            steps=[],
+            status=ChainStatus.EXECUTING,
+        )
+        step = WorkflowStep(
+            id="approval-step-1",
+            workflow_id=chain.id,
+            name="needs_approval",
+            step_type=StepType.HUMAN_APPROVAL,
+            config={"timeout_seconds": 0, "instructions": "Please approve"},
+        )
+        context = {"steps": {}}
+
+        with pytest.raises(EscalationRequired, match="timed out"):
+            await engine._execute_approval_step(
+                step, chain, context, step_index=0, tenant_id=test_tenant_id
+            )
+        # Context must record the timeout status
+        assert context["steps"]["needs_approval"]["status"] == "timeout"
+
+    @pytest.mark.asyncio
+    async def test_human_approval_denied_raises_escalation(self, test_tenant_id):
+        """HUMAN_APPROVAL step with 'denied' status raises EscalationRequired."""
+        from unittest.mock import patch
+        from nexus.types import WorkflowStep, StepType, ChainPlan, ChainStatus
+        from nexus.exceptions import EscalationRequired
+
+        defn, fn = _knowledge_search_tool()
+        engine = _make_engine(
+            personas=[_researcher()],
+            tools={"knowledge_search": (defn, fn)},
+        )
+
+        chain = ChainPlan(
+            tenant_id=test_tenant_id,
+            task="approval test",
+            steps=[],
+            status=ChainStatus.EXECUTING,
+        )
+        step = WorkflowStep(
+            id="approval-step-2",
+            workflow_id=chain.id,
+            name="needs_approval",
+            step_type=StepType.HUMAN_APPROVAL,
+            config={"timeout_seconds": 10},
+        )
+        context = {"steps": {}}
+        approval_id = f"approval:{chain.id}:0"
+
+        # Patch asyncio.sleep to set denied status on first call (no actual wait)
+        call_count = [0]
+
+        async def patched_sleep(seconds):
+            call_count[0] += 1
+            if (
+                call_count[0] == 1
+                and "_approvals" in context
+                and approval_id in context["_approvals"]
+            ):
+                context["_approvals"][approval_id]["status"] = "denied"
+            # Don't actually sleep
+
+        with patch("nexus.core.engine.asyncio.sleep", patched_sleep):
+            with pytest.raises(EscalationRequired):
+                await engine._execute_approval_step(
+                    step, chain, context, step_index=0, tenant_id=test_tenant_id
+                )
+
+        assert context["steps"]["needs_approval"]["status"] == "denied"

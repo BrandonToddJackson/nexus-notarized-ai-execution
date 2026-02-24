@@ -443,3 +443,97 @@ class TestExecuteEndpoint:
         assert call_kwargs.kwargs.get("persona_name") == "researcher", (
             f"Route must forward body.persona → persona_name='researcher', got: {call_kwargs}"
         )
+
+
+# ── Execute error paths (Gap 2) ────────────────────────────────────────────────
+
+class TestExecuteErrorPaths:
+
+    def test_anomaly_detected_returns_200_blocked(self, client_with_state, auth_headers):
+        """AnomalyDetected → 200 with status='blocked' (chain was sealed but blocked)."""
+        from unittest.mock import AsyncMock, MagicMock
+        from nexus.exceptions import AnomalyDetected
+
+        exc = AnomalyDetected("scope gate failed", gate_results=[], chain_id="blocked-chain-1")
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(side_effect=exc)
+        client_with_state.app.state.engine = mock_engine
+
+        resp = client_with_state.post(
+            "/v1/execute", json={"task": "blocked task"}, headers=auth_headers
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "blocked"
+
+    def test_chain_aborted_returns_422(self, client_with_state, auth_headers):
+        from unittest.mock import AsyncMock, MagicMock
+        from nexus.exceptions import ChainAborted
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(side_effect=ChainAborted("aborted"))
+        client_with_state.app.state.engine = mock_engine
+
+        resp = client_with_state.post(
+            "/v1/execute", json={"task": "aborted task"}, headers=auth_headers
+        )
+        assert resp.status_code == 422
+
+    def test_escalation_required_returns_422(self, client_with_state, auth_headers):
+        from unittest.mock import AsyncMock, MagicMock
+        from nexus.exceptions import EscalationRequired
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(side_effect=EscalationRequired("need human"))
+        client_with_state.app.state.engine = mock_engine
+
+        resp = client_with_state.post(
+            "/v1/execute", json={"task": "escalate"}, headers=auth_headers
+        )
+        assert resp.status_code == 422
+
+    def test_unexpected_exception_returns_500(self, client_with_state, auth_headers):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(side_effect=RuntimeError("boom"))
+        client_with_state.app.state.engine = mock_engine
+
+        resp = client_with_state.post(
+            "/v1/execute", json={"task": "crash"}, headers=auth_headers
+        )
+        assert resp.status_code == 500
+
+
+# ── JWT expiry (Gap 14) ────────────────────────────────────────────────────────
+
+class TestJWTExpiry:
+
+    def test_expired_jwt_returns_401(self, client):
+        """A JWT with exp in the past must be rejected with 401."""
+        import jwt as pyjwt
+        from datetime import datetime, timezone, timedelta
+        from nexus.config import config as nexus_config
+
+        expired_payload = {
+            "tenant_id": "demo",
+            "role": "user",
+            "exp": datetime.now(timezone.utc) - timedelta(seconds=10),
+            "iat": datetime.now(timezone.utc) - timedelta(hours=1),
+        }
+        expired_token = pyjwt.encode(
+            expired_payload,
+            nexus_config.secret_key,
+            algorithm=nexus_config.jwt_algorithm,
+        )
+        resp = client.get(
+            "/v1/ledger", headers={"Authorization": f"Bearer {expired_token}"}
+        )
+        assert resp.status_code == 401
+
+    def test_malformed_jwt_returns_401(self, client):
+        """A JWT with wrong signature must be rejected with 401."""
+        resp = client.get(
+            "/v1/ledger",
+            headers={"Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJ0ZW5hbnRfaWQiOiJ4In0.bad_sig"},
+        )
+        assert resp.status_code == 401

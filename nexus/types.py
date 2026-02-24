@@ -2,7 +2,7 @@
 
 from enum import Enum
 from typing import Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 import uuid
 
@@ -65,7 +65,7 @@ class GateResult(BaseModel):
     score: float                        # 0.0-1.0, meaning varies by gate
     threshold: float                    # configured threshold for this gate
     details: str                        # human-readable explanation
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class AnomalyResult(BaseModel):
     """Combined result of all 4 gates."""
@@ -101,7 +101,7 @@ class Seal(BaseModel):
     cot_trace: list[str] = Field(default_factory=list)  # reasoning steps
     fingerprint: str = ""               # Merkle chain hash
     parent_fingerprint: str = ""        # previous seal's fingerprint
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
 
@@ -113,7 +113,7 @@ class ChainPlan(BaseModel):
     steps: list[dict[str, Any]]         # planned steps from LLM decomposition
     status: ChainStatus = ChainStatus.PLANNING
     seals: list[str] = Field(default_factory=list)  # seal IDs in order
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
 
@@ -158,7 +158,7 @@ class KnowledgeDocument(BaseModel):
     chunks: list[str] = Field(default_factory=list)  # chunked text
     access_level: str = "internal"      # "public", "internal", "restricted", "confidential"
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class RetrievedContext(BaseModel):
     """Context assembled from RAG retrieval for an action."""
@@ -177,7 +177,7 @@ class CostRecord(BaseModel):
     input_tokens: int
     output_tokens: int
     cost_usd: float
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ── Phase 15: Workflow, Trigger, Credential, MCP Types ──────────────────────
@@ -270,8 +270,8 @@ class WorkflowDefinition(BaseModel):
     trigger_config: dict[str, Any] = Field(default_factory=dict)
     steps: list[WorkflowStep] = Field(default_factory=list)
     edges: list[WorkflowEdge] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: str = ""
     tags: list[str] = Field(default_factory=list)
     # settings keys: timeout_seconds, retry_policy, error_workflow_id
@@ -288,7 +288,7 @@ class WorkflowExecution(BaseModel):
     trigger_data: dict[str, Any] = Field(default_factory=dict)
     chain_id: str = ""                  # NEXUS chain that executed the steps
     status: ChainStatus = ChainStatus.PLANNING
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
     step_results: dict[str, Any] = Field(default_factory=dict)
@@ -305,7 +305,7 @@ class TriggerConfig(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     webhook_path: Optional[str] = None
     last_triggered_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class CredentialRecord(BaseModel):
@@ -317,8 +317,8 @@ class CredentialRecord(BaseModel):
     service_name: str                   # e.g. "github", "stripe", "sendgrid"
     encrypted_data: str                 # AES-256-GCM ciphertext (base64)
     scoped_personas: list[str] = Field(default_factory=list)  # [] = all personas
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: Optional[datetime] = None
 
 
@@ -336,3 +336,114 @@ class MCPServerConfig(BaseModel):
     enabled: bool = True
     discovered_tools: list[str] = Field(default_factory=list)
     last_connected_at: Optional[datetime] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 23.1: Ambiguity Resolution Types
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AmbiguitySessionStatus(str, Enum):
+    """Lifecycle states of a clarification session."""
+    active     = "active"      # Questions outstanding, awaiting user answers.
+    complete   = "complete"    # All gaps resolved. WorkflowPlan produced.
+    abandoned  = "abandoned"   # TTL expired or user explicitly cancelled.
+    generated  = "generated"   # WorkflowDefinition created from this session.
+
+
+class QuestionType(str, Enum):
+    """Controls how the frontend renders the answer widget."""
+    single_choice  = "single_choice"   # Radio buttons. One answer from options list.
+    multi_choice   = "multi_choice"    # Checkboxes. One or more answers from options.
+    text           = "text"            # Free-text input (constrained by max_chars).
+    boolean        = "boolean"         # Yes / No.
+    number         = "number"          # Integer or float with optional min/max.
+
+
+class ClarifyingQuestion(BaseModel):
+    """
+    A single structured question produced by the AmbiguityResolver.
+    """
+    id: str                         # UUID. Stable across rerenders.
+    session_id: str                 # Parent session ID.
+    dimension: str                  # What aspect is being clarified.
+    question: str                   # Human-readable question text.
+    question_type: QuestionType
+    options: list[str] = Field(default_factory=list)
+    required: bool = True
+    default: Optional[Any] = None
+    hint: Optional[str] = None
+    maps_to_param: str              # The WorkflowPlanParameter key this answer populates.
+    max_chars: Optional[int] = None
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+
+
+class ClarifyingAnswer(BaseModel):
+    """A user's answer to a single ClarifyingQuestion."""
+    question_id: str
+    session_id: str
+    value: Any                      # str | list[str] | bool | int | float
+    answered_at: datetime
+
+
+class SpecificityScore(BaseModel):
+    """
+    Result of the specificity analysis. Not persisted — computed fresh each time.
+    """
+    score: float                    # 0.0 = completely vague. 1.0 = fully specified.
+    dimensions_resolved: list[str]
+    dimensions_missing: list[str]
+    tool_coverage_ratio: float
+    has_trigger: bool
+    has_success_condition: bool
+    has_scope_boundary: bool
+    reasoning: str
+    can_auto_generate: bool         # True if score >= config.ambiguity_auto_generate_threshold.
+
+
+class WorkflowPlanParameter(BaseModel):
+    """
+    A single resolved parameter passed to WorkflowGenerator.generate() as context.
+    """
+    key: str
+    value: Any
+    source: str                     # "user_answer" | "inferred" | "default"
+    confidence: float               # 0.0–1.0.
+    confirmed_at: Optional[datetime] = None
+
+
+class WorkflowPlan(BaseModel):
+    """
+    The output of a completed AmbiguitySession.
+    Represents human-confirmed scope before any workflow is generated.
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str
+    tenant_id: str
+    original_description: str
+    refined_description: str
+    parameters: list[WorkflowPlanParameter] = Field(default_factory=list)
+    specificity_score: float
+    seal_fingerprint: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    workflow_definition_id: Optional[str] = None
+
+
+class AmbiguitySession(BaseModel):
+    """
+    Persistent record of a clarification session.
+    Stored in DB. May span multiple HTTP requests.
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    original_description: str
+    status: AmbiguitySessionStatus = AmbiguitySessionStatus.active
+    questions: list[ClarifyingQuestion] = Field(default_factory=list)
+    answers: list[ClarifyingAnswer] = Field(default_factory=list)
+    current_round: int = 1
+    max_rounds: int = 3
+    specificity_history: list[float] = Field(default_factory=list)
+    plan: Optional[WorkflowPlan] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
