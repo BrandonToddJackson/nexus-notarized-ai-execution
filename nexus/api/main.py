@@ -189,6 +189,23 @@ async def lifespan(app: FastAPI):
     # 12. AmbiguityResolver + WorkflowGenerator (Phase 23.1)
     from nexus.workflows.ambiguity import AmbiguityResolver
     from nexus.workflows.generator import WorkflowGenerator
+
+    # 13. SkillManager (Phase 25)
+    from nexus.skills.manager import SkillManager
+    skill_manager = SkillManager(
+        repository=None,
+        embedding_service=embedding_service if hasattr(app.state, 'embedding_service') else None,
+        config=config,
+    )
+    app.state.skill_manager = skill_manager
+
+    # 14. MCP adapter (Phase 25)
+    from nexus.mcp.client import MCPClient
+    from nexus.mcp.adapter import MCPToolAdapter
+    mcp_client = MCPClient()
+    mcp_adapter = MCPToolAdapter(tool_registry, mcp_client, None, vault)
+    app.state.mcp_adapter = mcp_adapter
+
     app.state.ambiguity_resolver = AmbiguityResolver(
         llm_client=llm_client,
         tool_registry=tool_registry,
@@ -201,6 +218,7 @@ async def lifespan(app: FastAPI):
         persona_manager=persona_manager,
         workflow_manager=workflow_manager,
         config=config,
+        skill_manager=skill_manager,
     )
 
     logger.info(f"NEXUS v{__version__} ready — {len(tool_registry.list_tools())} tools registered")
@@ -241,6 +259,7 @@ def create_app() -> FastAPI:
 
     # Routes
     from nexus.api.routes import execute, stream, ledger, personas, tools, knowledge, health, auth, workflows
+    from nexus.api.routes import skills, credentials, mcp_servers, executions, events
     app.include_router(execute.router, prefix="/v1")
     app.include_router(stream.router, prefix="/v1")
     app.include_router(ledger.router, prefix="/v1")
@@ -250,6 +269,11 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/v1")
     app.include_router(auth.router, prefix="/v1")
     app.include_router(workflows.router)
+    app.include_router(skills.router, prefix="/v2")
+    app.include_router(credentials.router, prefix="/v2")
+    app.include_router(mcp_servers.router, prefix="/v2")
+    app.include_router(executions.router, prefix="/v2")
+    app.include_router(events.router, prefix="/v2")
 
     return app
 

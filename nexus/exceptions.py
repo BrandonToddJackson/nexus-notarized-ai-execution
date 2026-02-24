@@ -124,6 +124,16 @@ class SandboxError(ToolError):
     pass
 
 
+class SkillNotFound(NexusError):
+    """Requested skill does not exist or is not accessible by this tenant."""
+    pass
+
+
+class SkillValidationError(NexusError):
+    """Skill definition is invalid."""
+    pass
+
+
 class AmbiguityResolutionError(NexusError):
     """
     Raised when AmbiguityResolver cannot proceed.

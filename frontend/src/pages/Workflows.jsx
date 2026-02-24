@@ -1,6 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
+import { GenerateModal } from '../components/workflows/GenerateModal'
+import { TemplateGallery } from '../components/workflows/TemplateGallery'
+import { WorkflowCard } from '../components/workflows/WorkflowCard'
+
+const VIEW_KEY = 'nexus_workflows_view'
 
 const STATUS_BADGE = {
   active: 'bg-green-900/50 text-green-400 border-green-800',
@@ -25,31 +30,137 @@ export default function Workflows() {
   const [workflows, setWorkflows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [view, setView] = useState(() => localStorage.getItem(VIEW_KEY) || 'card')
+  const [showGenerate, setShowGenerate] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
+  const importRef = useRef(null)
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true)
     api.get('/v2/workflows')
       .then((data) => setWorkflows(Array.isArray(data) ? data : data.workflows || []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [])
+  }
+
+  useEffect(() => { load() }, [])
+
+  const setViewPersisted = (v) => {
+    setView(v)
+    localStorage.setItem(VIEW_KEY, v)
+  }
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      await api.post('/v2/workflows/import', { data: text })
+      load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      importRef.current.value = ''
+    }
+  }
+
+  const handleGenerated = (workflow) => {
+    setShowGenerate(false)
+    if (workflow?.id) navigate(`/workflows/${workflow.id}`)
+    else load()
+  }
+
+  const handleTemplateCreate = () => {
+    setShowTemplates(false)
+    load()
+  }
+
+  const filtered = workflows.filter((wf) => {
+    if (statusFilter !== 'all' && wf.status !== statusFilter) return false
+    if (search) {
+      const q = search.toLowerCase()
+      return (wf.name || '').toLowerCase().includes(q) || (wf.description || '').toLowerCase().includes(q)
+    }
+    return true
+  })
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-6 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Workflows</h1>
           <p className="text-sm text-gray-400 mt-1">
             Visual automation workflows with NEXUS security gates
           </p>
         </div>
-        <button
-          onClick={() => navigate('/workflows/new')}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          + New Workflow
-        </button>
+        {/* Toolbar */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowTemplates(true)}
+            className="px-3 py-2 text-sm text-gray-300 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors"
+          >
+            Templates
+          </button>
+          <button
+            onClick={() => importRef.current?.click()}
+            className="px-3 py-2 text-sm text-gray-300 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors"
+          >
+            Import
+          </button>
+          <button
+            onClick={() => setShowGenerate(true)}
+            className="px-3 py-2 text-sm text-indigo-300 bg-indigo-900/40 hover:bg-indigo-900/70 border border-indigo-700 rounded-lg transition-colors"
+          >
+            ✨ Generate with AI
+          </button>
+          <button
+            onClick={() => navigate('/workflows/new')}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            + New Workflow
+          </button>
+        </div>
       </div>
 
+      {/* Filters + View toggle */}
+      <div className="flex items-center gap-3 mb-5">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search workflows…"
+          className="flex-1 max-w-xs px-3 py-1.5 text-sm bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-1.5 text-sm bg-gray-900 border border-gray-700 rounded-lg text-gray-300 focus:outline-none"
+        >
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="draft">Draft</option>
+          <option value="paused">Paused</option>
+          <option value="archived">Archived</option>
+        </select>
+        <div className="flex rounded-lg overflow-hidden border border-gray-700 ml-auto">
+          <button
+            onClick={() => setViewPersisted('card')}
+            className={`px-3 py-1.5 text-sm transition-colors ${view === 'card' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+          >⊞</button>
+          <button
+            onClick={() => setViewPersisted('table')}
+            className={`px-3 py-1.5 text-sm transition-colors ${view === 'table' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+          >☰</button>
+        </div>
+      </div>
+
+      {/* Hidden import input */}
+      <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+
+      {/* Loading */}
       {loading && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
@@ -61,60 +172,88 @@ export default function Workflows() {
         </div>
       )}
 
+      {/* Error */}
       {error && (
-        <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 text-sm text-red-300">
+        <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 text-sm text-red-300 mb-4">
           {error}
         </div>
       )}
 
-      {!loading && !error && workflows.length === 0 && (
+      {/* Empty state */}
+      {!loading && !error && filtered.length === 0 && (
         <div className="text-center py-16">
-          <svg className="w-16 h-16 text-gray-700 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-          <h3 className="text-lg font-medium text-gray-300 mb-2">No workflows yet</h3>
-          <p className="text-sm text-gray-500 mb-4">Create your first workflow to get started.</p>
-          <button
-            onClick={() => navigate('/workflows/new')}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            Create Workflow
-          </button>
+          <div className="text-4xl mb-4">🔄</div>
+          <h3 className="text-lg font-medium text-gray-300 mb-2">
+            {workflows.length === 0 ? 'No workflows yet' : 'No workflows match your filters'}
+          </h3>
+          <p className="text-sm text-gray-500 mb-4">
+            {workflows.length === 0 ? 'Create your first workflow to get started.' : 'Try a different search or status filter.'}
+          </p>
+          {workflows.length === 0 && (
+            <button
+              onClick={() => navigate('/workflows/new')}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Create Workflow
+            </button>
+          )}
         </div>
       )}
 
-      {!loading && !error && workflows.length > 0 && (
+      {/* Card view */}
+      {!loading && !error && filtered.length > 0 && view === 'card' && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {workflows.map((wf) => (
-            <div
-              key={wf.id}
-              className="bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-700 transition-colors"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <h3 className="text-sm font-semibold text-white truncate pr-2">
-                  {wf.name || 'Untitled'}
-                </h3>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${
-                    STATUS_BADGE[wf.status] || STATUS_BADGE.draft
-                  }`}
-                >
-                  {wf.status || 'draft'}
-                </span>
-              </div>
-              <div className="flex items-center gap-3 text-xs text-gray-500">
-                <span>v{wf.version || 1}</span>
-                {wf.updated_at && <span>{formatDate(wf.updated_at)}</span>}
-              </div>
-              <button
-                onClick={() => navigate(`/workflows/${wf.id}`)}
-                className="mt-3 w-full py-1.5 text-xs text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/60 rounded transition-colors"
-              >
-                Edit
-              </button>
-            </div>
+          {filtered.map((wf) => (
+            <WorkflowCard key={wf.id} workflow={wf} onRefresh={load} />
           ))}
         </div>
+      )}
+
+      {/* Table view */}
+      {!loading && !error && filtered.length > 0 && view === 'table' && (
+        <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="border-b border-gray-800">
+              <tr className="text-left text-gray-500 text-xs uppercase tracking-wide">
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Steps</th>
+                <th className="px-4 py-3">Updated</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {filtered.map((wf) => (
+                <tr key={wf.id} className="hover:bg-gray-800/50 transition-colors">
+                  <td className="px-4 py-3 text-white font-medium">{wf.name || 'Untitled'}</td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_BADGE[wf.status] || STATUS_BADGE.draft}`}>
+                      {wf.status || 'draft'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-400">{wf.steps?.length ?? 0}</td>
+                  <td className="px-4 py-3 text-gray-500">{formatDate(wf.updated_at)}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => navigate(`/workflows/${wf.id}`)}
+                      className="text-indigo-400 hover:text-indigo-300 text-xs"
+                    >
+                      Edit →
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Modals */}
+      {showGenerate && (
+        <GenerateModal onGenerated={handleGenerated} onClose={() => setShowGenerate(false)} />
+      )}
+      {showTemplates && (
+        <TemplateGallery onCreated={handleTemplateCreate} onClose={() => setShowTemplates(false)} />
       )}
     </div>
   )

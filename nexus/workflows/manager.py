@@ -150,7 +150,7 @@ class WorkflowManager:
                 workflow = await self._repository.get_workflow(workflow_id, tenant_id)
                 if workflow is not None:
                     self._store[workflow.id] = workflow
-            except NotImplementedError:
+            except (NotImplementedError, AttributeError):
                 pass
 
         if workflow is None or workflow.tenant_id != tenant_id:

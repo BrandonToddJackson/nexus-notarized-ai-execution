@@ -55,6 +55,7 @@ class WorkflowGenerator:
         persona_manager: PersonaManager,
         workflow_manager: WorkflowManager,
         config: NexusConfig,
+        skill_manager: Any = None,
     ) -> None:
         self._llm = llm_client
         self._tool_registry = tool_registry
@@ -62,6 +63,7 @@ class WorkflowGenerator:
         self._workflow_manager = workflow_manager
         self._config = config
         self._generation_model: Optional[str] = config.workflow_generation_model
+        self._skill_manager = skill_manager
 
     # ── Context builders ──────────────────────────────────────────────────────
 
@@ -96,6 +98,17 @@ class WorkflowGenerator:
             for p in all_personas
         ]
         return json.dumps(items, indent=2)
+
+    # ── Skill context ────────────────────────────────────────────────────────
+
+    async def _load_skill_context(self, task: str, persona_name: str, tenant_id: str) -> list:
+        if self._skill_manager is None:
+            return []
+        try:
+            skills = await self._skill_manager.semantic_match(task, tenant_id, persona_name, top_k=3)
+            return skills
+        except Exception:
+            return []
 
     # ── LLM call ─────────────────────────────────────────────────────────────
 
@@ -393,6 +406,7 @@ class WorkflowGenerator:
     async def _attempt_generate(
         self,
         description: str,
+        tenant_id: str = "",
         context: Optional[dict[str, Any]] = None,
         previous_errors: Optional[list[str]] = None,
     ) -> tuple[dict[str, Any], WorkflowDefinition]:
@@ -406,6 +420,14 @@ class WorkflowGenerator:
         )
 
         user_parts = [description]
+
+        # Load skill context if available
+        if tenant_id:
+            skills = await self._load_skill_context(description, "researcher", tenant_id)
+            if skills:
+                skill_lines = [f"{s.name}: {s.description}\n{s.content[:500]}" for s in skills]
+                user_parts.append("AVAILABLE SKILLS:\n" + "\n".join(skill_lines))
+
         ctx = context or {}
         if ctx.get("preferred_personas"):
             user_parts.append(f"Preferred personas: {ctx['preferred_personas']}")
@@ -480,6 +502,7 @@ class WorkflowGenerator:
             try:
                 raw_json, workflow_candidate = await self._attempt_generate(
                     description,
+                    tenant_id=tenant_id,
                     context=context,
                     previous_errors=last_errors if attempt > 0 else None,
                 )

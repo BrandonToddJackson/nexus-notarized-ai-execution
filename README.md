@@ -280,11 +280,11 @@ nexus/
 ├── cli/            # Typer CLI commands + project templates
 ├── callbacks/      # NexusCallback protocol + LoggingCallback
 ├── config/         # NexusConfig (BaseSettings) + YAML loaders
-frontend/           # React dashboard (Vite, port 5173) — 17 source files
+frontend/           # React dashboard (Vite, port 5173) — 57+ source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (1499 tests — phases 0-23.1)
+tests/              # pytest suite (1578 tests — phases 0-25)
 ```
 
 ## CLI
@@ -448,7 +448,8 @@ flowchart LR
 | 23 | NL Workflow Generation — natural language → DAG via LLM, iterative refinement, explain | ✅ Done |
 | 23.1 | Ambiguity Resolution — multi-round clarification sessions, specificity scoring, plan sealing | ✅ Done |
 | 24 | Visual Canvas — React Flow drag-and-drop workflow editor | ✅ Done |
-| 25–32 | Frontend v2, background workers, plugin marketplace, Alembic v2 migrations, docs | 🔲 Planned |
+| 25 | Frontend v2 + Skills System — Skills CRUD + versioning, Credentials vault UI (/peek, no secrets), MCP Servers, Executions + ChainReplay, GateBar/GateChip, React Query, Zustand, SSE event stream | ✅ Done |
+| 26–32 | Background workers, OAuth providers, plugin marketplace, Alembic v2 migrations, docs | 🔲 Planned |
 
 See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.
 

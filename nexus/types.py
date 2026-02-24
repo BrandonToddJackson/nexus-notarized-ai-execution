@@ -148,6 +148,49 @@ class SkillDefinition(BaseModel):
     tool_sequence: list[str]            # ordered tool names
     persona: str                        # which persona owns this skill
 
+class SkillVersion(BaseModel):
+    version: int
+    content: str
+    description: str
+    changed_at: datetime
+    change_note: str
+
+class SkillFile(BaseModel):
+    name: str
+    content: str          # base64 for binary, utf-8 for text
+    mime_type: str
+    description: str = ""
+
+class SkillRecord(BaseModel):
+    id: str
+    tenant_id: str
+    name: str                       # lowercase-hyphenated slug, max 64 chars
+    display_name: str
+    description: str                # max 1024 chars
+    content: str                    # Markdown body
+    version: int = 1
+    version_history: list[SkillVersion] = []
+    allowed_tools: list[str] = []
+    allowed_personas: list[str] = []
+    tags: list[str] = []
+    supporting_files: list[SkillFile] = []
+    invocation_count: int = 0
+    last_invoked_at: Optional[datetime] = None
+    active: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+class SkillInvocation(BaseModel):
+    id: str
+    skill_id: str
+    tenant_id: str
+    execution_id: Optional[str] = None
+    workflow_name: Optional[str] = None
+    persona_name: str
+    context_summary: str = ""
+    invoked_at: datetime
+
+
 class KnowledgeDocument(BaseModel):
     """A document in the tenant's knowledge base."""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))

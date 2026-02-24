@@ -13,10 +13,11 @@ from sqlalchemy import select, func
 
 from nexus.db.models import (
     TenantModel, PersonaModel, SealModel, ChainModel, CostModel, KnowledgeDocModel,
-    TriggerModel,
+    TriggerModel, SkillModel, SkillInvocationModel,
 )
 from nexus.types import (
     AmbiguitySession, Seal, ChainPlan, CostRecord, KnowledgeDocument, TriggerConfig, TriggerType,
+    SkillRecord, SkillInvocation, SkillVersion, SkillFile,
 )
 
 
@@ -516,3 +517,161 @@ class Repository:
         )
         await self.session.commit()
         return result.rowcount
+
+    # ── Skills ──
+
+    @staticmethod
+    def _model_to_skill(m: SkillModel) -> SkillRecord:
+        return SkillRecord(
+            id=m.id,
+            tenant_id=m.tenant_id,
+            name=m.name,
+            display_name=m.display_name,
+            description=m.description,
+            content=m.content,
+            version=m.version,
+            version_history=[SkillVersion(**v) for v in (m.version_history or [])],
+            allowed_tools=m.allowed_tools or [],
+            allowed_personas=m.allowed_personas or [],
+            tags=m.tags or [],
+            supporting_files=[SkillFile(**f) for f in (m.supporting_files or [])],
+            invocation_count=m.invocation_count or 0,
+            last_invoked_at=m.last_invoked_at,
+            active=m.active,
+            created_at=m.created_at,
+            updated_at=m.updated_at,
+        )
+
+    async def create_skill(self, skill: SkillRecord) -> SkillRecord:
+        """Persist a new skill."""
+        record = SkillModel(
+            id=skill.id,
+            tenant_id=skill.tenant_id,
+            name=skill.name,
+            display_name=skill.display_name,
+            description=skill.description,
+            content=skill.content,
+            version=skill.version,
+            version_history=[v.model_dump(mode="json") for v in skill.version_history],
+            allowed_tools=skill.allowed_tools,
+            allowed_personas=skill.allowed_personas,
+            tags=skill.tags,
+            supporting_files=[f.model_dump() for f in skill.supporting_files],
+            invocation_count=skill.invocation_count,
+            last_invoked_at=skill.last_invoked_at,
+            active=skill.active,
+            created_at=skill.created_at,
+            updated_at=skill.updated_at,
+        )
+        self.session.add(record)
+        await self.session.commit()
+        await self.session.refresh(record)
+        return self._model_to_skill(record)
+
+    async def get_skill(self, skill_id: str, tenant_id: str) -> Optional[SkillRecord]:
+        """Get skill by ID within tenant."""
+        result = await self.session.execute(
+            select(SkillModel).where(
+                SkillModel.id == skill_id,
+                SkillModel.tenant_id == tenant_id,
+            )
+        )
+        m = result.scalar_one_or_none()
+        return self._model_to_skill(m) if m else None
+
+    async def get_skill_by_name(self, name: str, tenant_id: str) -> Optional[SkillRecord]:
+        """Get skill by name within tenant."""
+        result = await self.session.execute(
+            select(SkillModel).where(
+                SkillModel.name == name,
+                SkillModel.tenant_id == tenant_id,
+            )
+        )
+        m = result.scalar_one_or_none()
+        return self._model_to_skill(m) if m else None
+
+    async def update_skill(self, skill_id: str, updates: dict) -> Optional[SkillRecord]:
+        """Update a skill."""
+        result = await self.session.execute(
+            select(SkillModel).where(SkillModel.id == skill_id)
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return None
+        for key, value in updates.items():
+            if hasattr(record, key):
+                setattr(record, key, value)
+        await self.session.commit()
+        await self.session.refresh(record)
+        return self._model_to_skill(record)
+
+    async def list_skills(
+        self, tenant_id: str, active_only: bool = False, limit: int = 50, offset: int = 0
+    ) -> list[SkillRecord]:
+        """List skills for a tenant."""
+        query = select(SkillModel).where(SkillModel.tenant_id == tenant_id)
+        if active_only:
+            query = query.where(SkillModel.active == True)  # noqa: E712
+        query = query.order_by(SkillModel.created_at.desc()).limit(limit).offset(offset)
+        result = await self.session.execute(query)
+        return [self._model_to_skill(m) for m in result.scalars().all()]
+
+    async def delete_skill(self, skill_id: str, tenant_id: str) -> bool:
+        """Soft delete a skill (set active=False)."""
+        result = await self.session.execute(
+            select(SkillModel).where(
+                SkillModel.id == skill_id,
+                SkillModel.tenant_id == tenant_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return False
+        record.active = False
+        record.updated_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        return True
+
+    async def record_skill_invocation(self, inv: SkillInvocation) -> SkillInvocation:
+        """Record a skill invocation."""
+        record = SkillInvocationModel(
+            id=inv.id,
+            skill_id=inv.skill_id,
+            tenant_id=inv.tenant_id,
+            execution_id=inv.execution_id,
+            workflow_name=inv.workflow_name,
+            persona_name=inv.persona_name,
+            context_summary=inv.context_summary,
+            invoked_at=inv.invoked_at,
+        )
+        self.session.add(record)
+        await self.session.commit()
+        return inv
+
+    async def list_skill_invocations(
+        self, skill_id: str, tenant_id: str, limit: int = 50, offset: int = 0
+    ) -> list[SkillInvocation]:
+        """List invocations for a skill."""
+        result = await self.session.execute(
+            select(SkillInvocationModel)
+            .where(
+                SkillInvocationModel.skill_id == skill_id,
+                SkillInvocationModel.tenant_id == tenant_id,
+            )
+            .order_by(SkillInvocationModel.invoked_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return [
+            SkillInvocation(
+                id=m.id,
+                skill_id=m.skill_id,
+                tenant_id=m.tenant_id,
+                execution_id=m.execution_id,
+                workflow_name=m.workflow_name,
+                persona_name=m.persona_name,
+                context_summary=m.context_summary or "",
+                invoked_at=m.invoked_at,
+            )
+            for m in result.scalars().all()
+        ]

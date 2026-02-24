@@ -230,3 +230,41 @@ class MCPServerModel(Base):
         UniqueConstraint("tenant_id", "name", name="uq_mcp_tenant_name"),
         Index("ix_mcp_tenant_enabled", "tenant_id", "enabled"),
     )
+
+
+class SkillModel(Base):
+    __tablename__ = "skills"
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    display_name = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    content = Column(Text, nullable=False)
+    version = Column(Integer, default=1)
+    version_history = Column(JSON, default=list)
+    allowed_tools = Column(JSON, default=list)
+    allowed_personas = Column(JSON, default=list)
+    tags = Column(JSON, default=list)
+    supporting_files = Column(JSON, default=list)
+    invocation_count = Column(Integer, default=0)
+    last_invoked_at = Column(DateTime(timezone=True), nullable=True)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_skill_tenant_name"),
+        Index("ix_skill_tenant_active", "tenant_id", "active"),
+    )
+
+
+class SkillInvocationModel(Base):
+    __tablename__ = "skill_invocations"
+    id = Column(String, primary_key=True)
+    skill_id = Column(String, ForeignKey("skills.id"), nullable=False, index=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    execution_id = Column(String, nullable=True)
+    workflow_name = Column(String, nullable=True)
+    persona_name = Column(String, nullable=False)
+    context_summary = Column(Text, default="")
+    invoked_at = Column(DateTime(timezone=True), nullable=False)

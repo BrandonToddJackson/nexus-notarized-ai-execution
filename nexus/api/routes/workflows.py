@@ -416,3 +416,166 @@ async def generate_workflow(
     except WorkflowGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return workflow.model_dump()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Templates, import/export, duplicate
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TEMPLATES = [
+    {
+        "id": "data-pipeline",
+        "name": "Data Pipeline",
+        "description": "Extract, transform, and load data from an API source",
+        "steps": [
+            {"id": "extract", "step_type": "action", "name": "Extract Data", "tool_name": "http_request", "persona_name": "researcher"},
+            {"id": "transform", "step_type": "action", "name": "Transform Data", "tool_name": "data_transform", "persona_name": "analyst"},
+        ],
+        "edges": [
+            {"source_step_id": "extract", "target_step_id": "transform", "edge_type": "default"},
+        ],
+        "tags": ["template", "data"],
+    },
+    {
+        "id": "research-report",
+        "name": "Research Report",
+        "description": "Search knowledge base and generate a summary report",
+        "steps": [
+            {"id": "search", "step_type": "action", "name": "Search Knowledge", "tool_name": "knowledge_search", "persona_name": "researcher"},
+            {"id": "summarize", "step_type": "action", "name": "Summarize Findings", "tool_name": "knowledge_search", "persona_name": "researcher"},
+        ],
+        "edges": [
+            {"source_step_id": "search", "target_step_id": "summarize", "edge_type": "default"},
+        ],
+        "tags": ["template", "research"],
+    },
+    {
+        "id": "approval-flow",
+        "name": "Approval Flow",
+        "description": "Process with human approval gate before execution",
+        "steps": [
+            {"id": "prepare", "step_type": "action", "name": "Prepare Request", "tool_name": "knowledge_search", "persona_name": "researcher"},
+            {"id": "approve", "step_type": "human_approval", "name": "Manager Approval", "config": {"message": "Please review and approve"}},
+            {"id": "execute", "step_type": "action", "name": "Execute Action", "tool_name": "http_request", "persona_name": "operator"},
+        ],
+        "edges": [
+            {"source_step_id": "prepare", "target_step_id": "approve", "edge_type": "default"},
+            {"source_step_id": "approve", "target_step_id": "execute", "edge_type": "default"},
+        ],
+        "tags": ["template", "approval"],
+    },
+]
+
+
+@router.get("/v2/workflows/templates")
+async def list_templates(request: Request):
+    """Return static list of workflow templates."""
+    return {"templates": _TEMPLATES}
+
+
+@router.post("/v2/workflows/from-template/{template_id}", status_code=201)
+async def create_from_template(
+    template_id: str,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Create a workflow from a template."""
+    template = next((t for t in _TEMPLATES if t["id"] == template_id), None)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    workflow = await manager.create(
+        tenant_id=tenant_id,
+        name=template["name"],
+        description=template.get("description", ""),
+        steps=template.get("steps", []),
+        edges=template.get("edges", []),
+        tags=template.get("tags", []),
+    )
+    return workflow.model_dump()
+
+
+@router.get("/v2/workflows/{workflow_id}/export")
+async def export_workflow(
+    workflow_id: str,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Export a workflow as JSON."""
+    try:
+        data = await manager.export_json(workflow_id, tenant_id)
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return {"data": data}
+
+
+@router.post("/v2/workflows/import", status_code=201)
+async def import_workflow(
+    body: dict,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Import a workflow from JSON."""
+    json_str = body.get("data", "")
+    if not json_str:
+        raise HTTPException(status_code=422, detail="Missing 'data' field")
+    try:
+        workflow = await manager.import_json(json_str, tenant_id)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return workflow.model_dump()
+
+
+@router.post("/v2/workflows/{workflow_id}/duplicate", status_code=201)
+async def duplicate_workflow(
+    workflow_id: str,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Duplicate a workflow."""
+    try:
+        workflow = await manager.duplicate(workflow_id, tenant_id)
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow.model_dump()
+
+
+@router.patch("/v2/workflows/{workflow_id}")
+async def patch_workflow(
+    workflow_id: str,
+    body: dict,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Partial update of a workflow, including active/status bool support."""
+    from nexus.types import WorkflowStatus
+
+    status = None
+    if "status" in body:
+        try:
+            status = WorkflowStatus(body["status"])
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"Invalid status: {body['status']}")
+    if "active" in body:
+        status = WorkflowStatus.ACTIVE if body["active"] else WorkflowStatus.ARCHIVED
+
+    try:
+        workflow = await manager.update(
+            workflow_id=workflow_id,
+            tenant_id=tenant_id,
+            name=body.get("name"),
+            description=body.get("description"),
+            steps=body.get("steps"),
+            edges=body.get("edges"),
+            tags=body.get("tags"),
+            settings=body.get("settings"),
+            trigger_config=body.get("trigger_config"),
+            status=status,
+        )
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow.model_dump()
