@@ -29,6 +29,7 @@ dependencies = [
     "mcp>=1.0.0",
     "jmespath>=1.0.0",
     "croniter>=2.0.0",
+    "arq>=0.25.0",
 ]
 
 [project.optional-dependencies]

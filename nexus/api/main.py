@@ -221,6 +221,22 @@ async def lifespan(app: FastAPI):
         skill_manager=skill_manager,
     )
 
+    # 15. ARQ pool + WorkflowDispatcher (Phase 26)
+    try:
+        from arq import create_pool
+        from arq.connections import RedisSettings
+        from nexus.workers.dispatcher import WorkflowDispatcher
+
+        arq_pool = await create_pool(RedisSettings.from_dsn(config.task_queue_url))
+        app.state.arq_pool = arq_pool
+        app.state.dispatcher = WorkflowDispatcher(engine, arq_pool, config)
+        trigger_manager.set_dispatcher(app.state.dispatcher)
+        logger.info("ARQ pool connected — background workers enabled")
+    except ImportError:
+        app.state.arq_pool = None
+        app.state.dispatcher = None
+        logger.warning("arq not installed — background workers disabled")
+
     logger.info(f"NEXUS v{__version__} ready — {len(tool_registry.list_tools())} tools registered")
 
     yield
@@ -228,6 +244,8 @@ async def lifespan(app: FastAPI):
     # ── Shutdown ──
     logger.info("NEXUS shutting down...")
     await cron_scheduler.stop()
+    if getattr(app.state, "arq_pool", None) is not None:
+        await app.state.arq_pool.close()
     await redis_client.close()
 
 
@@ -260,6 +278,7 @@ def create_app() -> FastAPI:
     # Routes
     from nexus.api.routes import execute, stream, ledger, personas, tools, knowledge, health, auth, workflows
     from nexus.api.routes import skills, credentials, mcp_servers, executions, events
+    from nexus.api.routes.jobs import router as jobs_router
     app.include_router(execute.router, prefix="/v1")
     app.include_router(stream.router, prefix="/v1")
     app.include_router(ledger.router, prefix="/v1")
@@ -274,6 +293,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_servers.router, prefix="/v2")
     app.include_router(executions.router, prefix="/v2")
     app.include_router(events.router, prefix="/v2")
+    app.include_router(jobs_router, prefix="/v2/jobs", tags=["jobs"])
 
     return app
 

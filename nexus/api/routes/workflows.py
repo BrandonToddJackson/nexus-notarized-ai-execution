@@ -298,6 +298,11 @@ class WorkflowStatusRequest(BaseModel):
     status: str
 
 
+class RunWorkflowRequest(BaseModel):
+    context: Optional[dict] = None
+    force_background: bool = False
+
+
 class WorkflowGenerateRequest(BaseModel):
     description: str = Field(..., min_length=10, max_length=5000)
 
@@ -541,6 +546,29 @@ async def duplicate_workflow(
     except WorkflowNotFound:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return workflow.model_dump()
+
+
+@router.post("/v2/workflows/{workflow_id}/run")
+async def run_workflow(
+    workflow_id: str,
+    body: RunWorkflowRequest,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Dispatch a manual workflow run (inline or background depending on size/flags)."""
+    dispatcher = getattr(request.app.state, "dispatcher", None)
+    if dispatcher is None:
+        raise HTTPException(status_code=503, detail="WorkflowDispatcher not available")
+
+    trigger_data = {"_source": "manual", **(body.context or {})}
+    return await dispatcher.dispatch(
+        workflow_id=workflow_id,
+        tenant_id=tenant_id,
+        trigger_data=trigger_data,
+        force_background=body.force_background,
+        workflow_manager=manager,
+    )
 
 
 @router.patch("/v2/workflows/{workflow_id}")

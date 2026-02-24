@@ -13,11 +13,11 @@ from sqlalchemy import select, func
 
 from nexus.db.models import (
     TenantModel, PersonaModel, SealModel, ChainModel, CostModel, KnowledgeDocModel,
-    TriggerModel, SkillModel, SkillInvocationModel,
+    TriggerModel, SkillModel, SkillInvocationModel, WorkflowExecutionModel,
 )
 from nexus.types import (
     AmbiguitySession, Seal, ChainPlan, CostRecord, KnowledgeDocument, TriggerConfig, TriggerType,
-    SkillRecord, SkillInvocation, SkillVersion, SkillFile,
+    SkillRecord, SkillInvocation, SkillVersion, SkillFile, WorkflowExecution,
 )
 
 
@@ -675,3 +675,69 @@ class Repository:
             )
             for m in result.scalars().all()
         ]
+
+    # ── WorkflowExecutions ──
+
+    async def save_execution(self, execution: WorkflowExecution) -> WorkflowExecutionModel:
+        """Persist a WorkflowExecution record."""
+        import json
+        model = WorkflowExecutionModel(
+            id=execution.id,
+            workflow_id=execution.workflow_id,
+            workflow_version=execution.workflow_version,
+            tenant_id=execution.tenant_id,
+            trigger_type=execution.trigger_type.value if hasattr(execution.trigger_type, "value") else str(execution.trigger_type),
+            trigger_data=json.loads(json.dumps(execution.trigger_data, default=str)),
+            chain_id=execution.chain_id or "",
+            status=execution.status.value if hasattr(execution.status, "value") else str(execution.status),
+            started_at=execution.started_at,
+            completed_at=getattr(execution, "completed_at", None),
+            error=getattr(execution, "error", None),
+            step_results=json.loads(json.dumps(getattr(execution, "step_results", {}), default=str)),
+        )
+        self.session.add(model)
+        await self.session.commit()
+        await self.session.refresh(model)
+        return model
+
+    async def get_execution(self, tenant_id: str, execution_id: str) -> Optional[WorkflowExecutionModel]:
+        """Fetch a WorkflowExecution by ID within a tenant."""
+        result = await self.session.execute(
+            select(WorkflowExecutionModel).where(
+                WorkflowExecutionModel.tenant_id == tenant_id,
+                WorkflowExecutionModel.id == execution_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def update_execution(self, execution_id: str, updates: dict) -> Optional[WorkflowExecutionModel]:
+        """Apply partial updates to a WorkflowExecution row."""
+        result = await self.session.execute(
+            select(WorkflowExecutionModel).where(WorkflowExecutionModel.id == execution_id)
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            return None
+        for key, value in updates.items():
+            if hasattr(model, key):
+                setattr(model, key, value)
+        await self.session.commit()
+        await self.session.refresh(model)
+        return model
+
+    async def list_executions(
+        self,
+        tenant_id: str,
+        workflow_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[WorkflowExecutionModel]:
+        """List executions for a tenant, newest first."""
+        from sqlalchemy import desc
+        query = select(WorkflowExecutionModel).where(
+            WorkflowExecutionModel.tenant_id == tenant_id
+        )
+        if workflow_id is not None:
+            query = query.where(WorkflowExecutionModel.workflow_id == workflow_id)
+        query = query.order_by(desc(WorkflowExecutionModel.started_at)).limit(limit)
+        result = await self.session.execute(query)
+        return list(result.scalars().all())

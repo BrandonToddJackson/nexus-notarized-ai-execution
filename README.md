@@ -269,6 +269,7 @@ nexus/
 ├── tools/          # Execution: registry, sandbox v2 (Py/JS/TS), executor, built-ins
 │   └── builtin/    # web, file, comms, data, http_request, data_transform, frontend_design
 ├── workflows/      # DAG definition: dag.py, validator.py, manager.py (v2)
+├── workers/        # ARQ background workers: queue.py (tasks), dispatcher.py (inline/bg routing)
 ├── credentials/    # Credential vault: encryption.py (Fernet), vault.py (v2)
 ├── mcp/            # MCP client + tool adapter + credential injection (v2)
 ├── triggers/       # Trigger system: webhook, cron, event bus, workflow-complete chaining (v2)
@@ -284,7 +285,7 @@ frontend/           # React dashboard (Vite, port 5173) — 57+ source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (1578 tests — phases 0-25)
+tests/              # pytest suite (1630 tests — phases 0-26)
 ```
 
 ## CLI
@@ -325,6 +326,8 @@ nexus tools               # Registered tools with risk levels
 | POST | /v1/knowledge/ingest | Upload documents to vector store |
 | GET | /v1/knowledge/query | Semantic search |
 | GET | /v1/health | Health check with service probes |
+| POST | /v2/workflows/{id}/run | Dispatch a manual workflow run (inline or background) |
+| GET | /v2/jobs/{job_id} | Poll background job status and result |
 
 Interactive API docs: `http://localhost:8000/docs`
 
@@ -449,7 +452,8 @@ flowchart LR
 | 23.1 | Ambiguity Resolution — multi-round clarification sessions, specificity scoring, plan sealing | ✅ Done |
 | 24 | Visual Canvas — React Flow drag-and-drop workflow editor | ✅ Done |
 | 25 | Frontend v2 + Skills System — Skills CRUD + versioning, Credentials vault UI (/peek, no secrets), MCP Servers, Executions + ChainReplay, GateBar/GateChip, React Query, Zustand, SSE event stream | ✅ Done |
-| 26–32 | Background workers, OAuth providers, plugin marketplace, Alembic v2 migrations, docs | 🔲 Planned |
+| 26 | Background Execution — ARQ task queue, `WorkflowDispatcher` (inline/background routing, 5-step threshold), `POST /v2/workflows/{id}/run`, `GET /v2/jobs/{job_id}`, `TriggerManager.set_dispatcher()` | ✅ Done |
+| 27–32 | Plugin marketplace, OAuth providers, Alembic v2 migrations, infrastructure, examples & docs | 🔲 Planned |
 
 See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.
 

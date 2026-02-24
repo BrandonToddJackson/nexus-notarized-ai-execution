@@ -29,21 +29,26 @@ class TriggerManager:
         repository,
         event_bus,
         config,
+        dispatcher=None,
     ) -> None:
         self._engine          = engine
         self._workflow_manager = workflow_manager
         self._repository      = repository
         self._event_bus       = event_bus
         self._config          = config
+        self._dispatcher      = dispatcher
         self._cron_scheduler  = None  # injected after construction
 
         # Maps trigger.id → subscriber callable (for EVENT / WORKFLOW_COMPLETE triggers)
         self._event_handlers: dict[str, Callable] = {}
 
-    # ── Cron scheduler injection (avoids circular constructor args) ──────────
+    # ── Late injection (avoids circular constructor args) ─────────────────────
 
     def set_cron_scheduler(self, scheduler) -> None:
         self._cron_scheduler = scheduler
+
+    def set_dispatcher(self, dispatcher) -> None:
+        self._dispatcher = dispatcher
 
     # ── Create ───────────────────────────────────────────────────────────────
 
@@ -183,6 +188,13 @@ class TriggerManager:
         # Always update last_triggered_at, even if the engine raises
         updated = trigger.model_copy(update={"last_triggered_at": now})
         await self._repository.update_trigger(updated)
+
+        if self._dispatcher is not None:
+            return await self._dispatcher.dispatch(
+                workflow_id=trigger.workflow_id,
+                tenant_id=trigger.tenant_id,
+                trigger_data=payload,
+            )
 
         execution = await self._engine.run_workflow(
             workflow_id=trigger.workflow_id,

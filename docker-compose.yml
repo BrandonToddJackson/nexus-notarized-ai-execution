@@ -16,6 +16,20 @@ services:
     volumes:
       - chromadata:/app/data/chroma
 
+  nexus-worker:
+    build: .
+    command: arq nexus.workers.queue.WorkerSettings
+    environment:
+      - NEXUS_DATABASE_URL=postgresql+asyncpg://nexus:nexus@postgres:5432/nexus
+      - NEXUS_REDIS_URL=redis://redis:6379/0
+      - NEXUS_TASK_QUEUE_URL=redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     ports:
