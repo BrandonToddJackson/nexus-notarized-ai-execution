@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from nexus.exceptions import AmbiguityResolutionError, WorkflowGenerationError, WorkflowNotFound
+from nexus.exceptions import AmbiguityResolutionError, WorkflowGenerationError, WorkflowNotFound, WorkflowValidationError
 from nexus.types import AmbiguitySessionStatus, ClarifyingAnswer
 
 logger = logging.getLogger(__name__)
@@ -607,3 +607,112 @@ async def patch_workflow(
     except WorkflowNotFound:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return workflow.model_dump()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Workflow lifecycle: activate, pause, versions, rollback, refine, explain
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RefineRequest(BaseModel):
+    feedback: str = Field(..., min_length=1, max_length=5000)
+
+
+class ExplainRequest(BaseModel):
+    audience: str = "technical"
+
+
+@router.post("/v2/workflows/{workflow_id}/activate")
+async def activate_workflow(
+    workflow_id: str,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Activate (enable) a workflow so it can be triggered."""
+    try:
+        workflow = await manager.activate(workflow_id, tenant_id)
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    except WorkflowValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return workflow.model_dump()
+
+
+@router.post("/v2/workflows/{workflow_id}/pause")
+async def pause_workflow(
+    workflow_id: str,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Pause a workflow (stops triggers from firing)."""
+    try:
+        workflow = await manager.pause(workflow_id, tenant_id)
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow.model_dump()
+
+
+@router.get("/v2/workflows/{workflow_id}/versions")
+async def get_workflow_versions(
+    workflow_id: str,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Return the full version history of a workflow."""
+    try:
+        versions = await manager.get_version_history(workflow_id, tenant_id)
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return {"versions": [v.model_dump() for v in versions]}
+
+
+@router.post("/v2/workflows/{workflow_id}/rollback/{version}")
+async def rollback_workflow(
+    workflow_id: str,
+    version: int,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Roll back a workflow to a previous version."""
+    try:
+        workflow = await manager.rollback(workflow_id, tenant_id, target_version=version)
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow or version not found")
+    return workflow.model_dump()
+
+
+@router.post("/v2/workflows/{workflow_id}/refine")
+async def refine_workflow(
+    workflow_id: str,
+    body: RefineRequest,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    generator=Depends(_get_generator),
+):
+    """Refine an existing workflow based on natural-language feedback."""
+    try:
+        workflow = await generator.refine(workflow_id, tenant_id, body.feedback)
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    except WorkflowGenerationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return workflow.model_dump()
+
+
+@router.post("/v2/workflows/{workflow_id}/explain")
+async def explain_workflow(
+    workflow_id: str,
+    body: ExplainRequest,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    generator=Depends(_get_generator),
+):
+    """Generate a plain-English explanation of a workflow."""
+    try:
+        explanation = await generator.explain(workflow_id, tenant_id)
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return {"explanation": explanation, "audience": body.audience}

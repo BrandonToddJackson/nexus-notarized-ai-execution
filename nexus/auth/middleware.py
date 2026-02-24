@@ -20,6 +20,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     # Paths that don't require auth
     PUBLIC_PATHS = {"/v1/health", "/v1/auth/token", "/docs", "/openapi.json", "/redoc"}
+    # Webhook prefix — matched by startswith so all /v2/webhooks/* paths bypass JWT
+    PUBLIC_PREFIXES = ("/v2/webhooks",)
 
     def __init__(self, app, jwt_manager: JWTManager = None, repository=None):
         super().__init__(app)
@@ -42,6 +44,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """
         # Skip auth for public paths
         if request.url.path in self.PUBLIC_PATHS:
+            return await call_next(request)
+        if any(request.url.path.startswith(p) for p in self.PUBLIC_PREFIXES):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization", "")

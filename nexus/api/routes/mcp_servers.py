@@ -156,3 +156,23 @@ async def reconnect_server(
     except MCPConnectionError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return {"reconnected": True, "tools_registered": len(tools)}
+
+
+@router.post("/mcp/servers/{server_id}/refresh")
+async def refresh_server(
+    server_id: str,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    adapter=Depends(_get_adapter),
+):
+    """Refresh tool discovery for an MCP server without full reconnect."""
+    server = adapter.get_server(server_id)
+    if server is None or server.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="MCP server not found")
+    # Re-discover tools by reconnecting
+    await adapter.unregister_server(server_id)
+    try:
+        tools = await adapter.register_server(tenant_id, server)
+    except MCPConnectionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"refreshed": True, "server_id": server_id, "tools_registered": len(tools)}

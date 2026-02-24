@@ -291,7 +291,7 @@ frontend/           # React dashboard (Vite, port 5173) — 57+ source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (1761 tests — phases 0-28)
+tests/              # pytest suite (1846 tests — phases 0-29)
 ```
 
 ## CLI
@@ -342,8 +342,35 @@ nexus plugin verify [plugin-name]                 # SHA-256 tamper detection (al
 | POST | /v1/knowledge/ingest | Upload documents to vector store |
 | GET | /v1/knowledge/query | Semantic search |
 | GET | /v1/health | Health check with service probes |
+| GET | /v2/workflows | List workflows |
+| POST | /v2/workflows | Create workflow |
+| GET | /v2/workflows/{id} | Get workflow detail |
+| PUT | /v2/workflows/{id} | Update workflow definition |
+| POST | /v2/workflows/{id}/activate | Activate a workflow |
+| POST | /v2/workflows/{id}/pause | Pause an active workflow |
+| GET | /v2/workflows/{id}/versions | Version history |
+| POST | /v2/workflows/{id}/rollback/{version} | Roll back to a previous version |
+| POST | /v2/workflows/{id}/refine | Refine workflow definition via LLM feedback |
+| POST | /v2/workflows/{id}/explain | Plain-English explanation of a workflow |
 | POST | /v2/workflows/{id}/run | Dispatch a manual workflow run (inline or background) |
-| GET | /v2/jobs/{job_id} | Poll background job status and result |
+| GET | /v2/executions | List executions |
+| GET | /v2/executions/{id} | Execution detail with seal data |
+| DELETE | /v2/executions/{id} | Delete a non-running execution |
+| GET | /v2/executions/{id}/stream | SSE stream — replay seals then live events |
+| GET | /v2/triggers | List triggers |
+| POST | /v2/triggers | Create trigger (webhook / cron / event / manual) |
+| GET | /v2/triggers/{id} | Get trigger |
+| PUT | /v2/triggers/{id} | Update trigger (enable/disable) |
+| POST | /v2/triggers/{id}/enable | Enable trigger |
+| POST | /v2/triggers/{id}/disable | Disable trigger |
+| DELETE | /v2/triggers/{id} | Delete trigger |
+| GET/POST/… | /v2/webhooks/{path} | Catch-all webhook receiver (no JWT required) |
+| GET | /v2/marketplace/search | Search plugin marketplace |
+| GET | /v2/marketplace/installed | List installed plugins |
+| POST | /v2/marketplace/install | Install a plugin from PyPI |
+| DELETE | /v2/marketplace/{name} | Uninstall a plugin |
+| GET | /v2/jobs/{job_id} | Poll background job status |
+| GET | /v2/jobs/{job_id}/result | Get background job result |
 
 Interactive API docs: `http://localhost:8000/docs`
 
@@ -479,7 +506,8 @@ flowchart LR
 | 26 | Background Execution — ARQ task queue, `WorkflowDispatcher` (inline/background routing, 5-step threshold), `POST /v2/workflows/{id}/run`, `GET /v2/jobs/{job_id}`, `TriggerManager.set_dispatcher()` | ✅ Done |
 | 27 | Plugin Marketplace — `nexus-plugin-*` PyPI ecosystem, `PluginManifest` + `@nexus_plugin_tool` SDK, `PluginRegistry` (install/upgrade/verify), 15-threat CVE security model, `nexus plugin` CLI (7 sub-commands) | ✅ Done |
 | 28 | Persistence v2 — Alembic migrations (async), 15 new repository methods (workflow/credential/MCP CRUD), seed v2 data, `CredentialModel.is_active`, `MCPServerModel.url` nullable | ✅ Done |
-| 29–32 | Full API v2 routes, test suite v2, infrastructure v2, examples & docs v2 | 🔲 Planned |
+| 29 | API v2 Complete — triggers CRUD, webhook catch-all (no JWT), marketplace endpoints, workflow lifecycle (activate/pause/versions/rollback/refine/explain), execution SSE stream + delete, job result, MCP refresh | ✅ Done |
+| 30–32 | Test suite v2, infrastructure v2, examples & docs v2 | 🔲 Planned |
 
 See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.
 

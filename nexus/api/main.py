@@ -93,6 +93,16 @@ async def lifespan(app: FastAPI):
         tool_registry.register(definition, impl)
     app.state.tool_registry = tool_registry
 
+    # 8b. Plugin Marketplace registry (Phase 27/29)
+    from nexus.marketplace import PluginRegistry
+    plugin_registry = PluginRegistry(
+        tool_registry=tool_registry,
+        config=config,
+        persona_manager=persona_manager,
+    )
+    await plugin_registry.load_state()
+    app.state.plugin_registry = plugin_registry
+
     # 9. Build all remaining components
     from nexus.core.anomaly import AnomalyEngine
     from nexus.core.notary import Notary
@@ -166,6 +176,7 @@ async def lifespan(app: FastAPI):
         llm_client=llm_client,
         config=config,
         event_bus=event_bus,
+        plugin_registry=plugin_registry,
     )
     app.state.engine = engine
 
@@ -278,6 +289,7 @@ def create_app() -> FastAPI:
     # Routes
     from nexus.api.routes import execute, stream, ledger, personas, tools, knowledge, health, auth, workflows
     from nexus.api.routes import skills, credentials, mcp_servers, executions, events
+    from nexus.api.routes import triggers, webhooks, marketplace
     from nexus.api.routes.jobs import router as jobs_router
     app.include_router(execute.router, prefix="/v1")
     app.include_router(stream.router, prefix="/v1")
@@ -294,6 +306,9 @@ def create_app() -> FastAPI:
     app.include_router(executions.router, prefix="/v2")
     app.include_router(events.router, prefix="/v2")
     app.include_router(jobs_router, prefix="/v2/jobs", tags=["jobs"])
+    app.include_router(triggers.router, prefix="/v2")
+    app.include_router(webhooks.router)  # NO prefix — catch-all encodes full path
+    app.include_router(marketplace.router, prefix="/v2")
 
     return app
 
