@@ -178,6 +178,7 @@ class CredentialModel(Base):
     service_name = Column(String, nullable=False)
     encrypted_data = Column(Text, nullable=False)       # AES-256-GCM ciphertext
     scoped_personas = Column(JSON, default=list)
+    is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime, nullable=True)
@@ -185,6 +186,7 @@ class CredentialModel(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "name", name="uq_credential_tenant_name"),
         Index("ix_credential_tenant_service", "tenant_id", "service_name"),
+        Index("ix_cred_tenant_active", "tenant_id", "is_active"),
     )
 
 
@@ -216,7 +218,7 @@ class MCPServerModel(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String, ForeignKey("tenants.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
-    url = Column(String, nullable=False)
+    url = Column(String, nullable=True)
     transport = Column(String, nullable=False)          # "stdio"|"sse"|"streamable_http"
     command = Column(String, nullable=True)
     args = Column(JSON, default=list)

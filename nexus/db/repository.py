@@ -9,11 +9,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
+import uuid
 
 from nexus.db.models import (
     TenantModel, PersonaModel, SealModel, ChainModel, CostModel, KnowledgeDocModel,
     TriggerModel, SkillModel, SkillInvocationModel, WorkflowExecutionModel,
+    WorkflowModel, CredentialModel, MCPServerModel,
 )
 from nexus.types import (
     AmbiguitySession, Seal, ChainPlan, CostRecord, KnowledgeDocument, TriggerConfig, TriggerType,
@@ -741,3 +743,390 @@ class Repository:
         query = query.order_by(desc(WorkflowExecutionModel.started_at)).limit(limit)
         result = await self.session.execute(query)
         return list(result.scalars().all())
+
+    # ── Workflows ──
+
+    async def save_workflow(
+        self,
+        tenant_id: str,
+        name: str,
+        description: str = "",
+        steps: list = None,
+        edges: list = None,
+        trigger_config: dict = None,
+        settings: dict = None,
+        tags: list = None,
+        created_by: str = "",
+        status: str = "draft",
+        version: int = 1,
+    ) -> WorkflowModel:
+        """Create a new workflow."""
+        now = datetime.now(timezone.utc)
+        record = WorkflowModel(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            name=name,
+            description=description,
+            version=version,
+            status=status,
+            trigger_config=trigger_config if trigger_config is not None else {},
+            steps=steps if steps is not None else [],
+            edges=edges if edges is not None else [],
+            created_at=now,
+            updated_at=now,
+            created_by=created_by,
+            tags=tags if tags is not None else [],
+            settings=settings if settings is not None else {},
+        )
+        self.session.add(record)
+        await self.session.commit()
+        await self.session.refresh(record)
+        return record
+
+    async def get_workflow(
+        self,
+        tenant_id: str,
+        workflow_id: str,
+        version: Optional[int] = None,
+    ) -> Optional[WorkflowModel]:
+        """Get workflow by ID. If version=None, returns the latest version."""
+        query = select(WorkflowModel).where(
+            WorkflowModel.tenant_id == tenant_id,
+            WorkflowModel.id == workflow_id,
+        )
+        if version is not None:
+            query = query.where(WorkflowModel.version == version)
+        else:
+            query = query.order_by(WorkflowModel.version.desc()).limit(1)
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def list_workflows(
+        self,
+        tenant_id: str,
+        status: Optional[str] = None,
+        tags: Optional[list] = None,
+        limit: int = 50,
+        offset: int = 0,
+        latest_only: bool = True,
+    ) -> list[WorkflowModel]:
+        """List workflows for a tenant with optional filters."""
+        from sqlalchemy import desc
+        query = select(WorkflowModel).where(WorkflowModel.tenant_id == tenant_id)
+        if status is not None:
+            query = query.where(WorkflowModel.status == status)
+        query = query.order_by(desc(WorkflowModel.updated_at))
+        result = await self.session.execute(query)
+        rows = list(result.scalars().all())
+
+        # Tags filter (Python-side on JSON column)
+        if tags:
+            rows = [r for r in rows if any(t in (r.tags or []) for t in tags)]
+
+        # Dedup to latest version per name
+        if latest_only:
+            seen: dict[str, WorkflowModel] = {}
+            for row in rows:
+                existing = seen.get(row.name)
+                if existing is None or row.version > existing.version:
+                    seen[row.name] = row
+            rows = sorted(seen.values(), key=lambda r: r.updated_at or datetime.min, reverse=True)
+
+        return rows[offset: offset + limit]
+
+    async def update_workflow(
+        self, tenant_id: str, workflow_id: str, updates: dict
+    ) -> Optional[WorkflowModel]:
+        """Apply partial updates to a workflow."""
+        allowed = {
+            "name", "description", "status", "trigger_config", "steps",
+            "edges", "settings", "tags", "created_by", "version",
+        }
+        bad = set(updates) - allowed
+        if bad:
+            raise ValueError(f"Unknown workflow update keys: {bad}")
+        result = await self.session.execute(
+            select(WorkflowModel).where(
+                WorkflowModel.tenant_id == tenant_id,
+                WorkflowModel.id == workflow_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return None
+        for key, value in updates.items():
+            setattr(record, key, value)
+        record.updated_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        await self.session.refresh(record)
+        return record
+
+    async def delete_workflow(self, tenant_id: str, workflow_id: str) -> bool:
+        """Hard-delete a workflow and cascade to triggers and executions."""
+        result = await self.session.execute(
+            select(WorkflowModel).where(
+                WorkflowModel.tenant_id == tenant_id,
+                WorkflowModel.id == workflow_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return False
+        # Cascade: delete triggers and executions
+        await self.session.execute(
+            delete(TriggerModel).where(TriggerModel.workflow_id == workflow_id)
+        )
+        await self.session.execute(
+            delete(WorkflowExecutionModel).where(
+                WorkflowExecutionModel.workflow_id == workflow_id
+            )
+        )
+        await self.session.delete(record)
+        await self.session.commit()
+        return True
+
+    # ── Credentials ──
+
+    async def save_credential(
+        self,
+        tenant_id: str,
+        name: str,
+        credential_type: str,
+        service_name: str,
+        encrypted_data: str,
+        scoped_personas: Optional[list] = None,
+        expires_at: Optional[datetime] = None,
+    ) -> CredentialModel:
+        """Create a new credential."""
+        now = datetime.now(timezone.utc)
+        record = CredentialModel(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            name=name,
+            credential_type=credential_type,
+            service_name=service_name,
+            encrypted_data=encrypted_data,
+            scoped_personas=scoped_personas if scoped_personas is not None else [],
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+            expires_at=expires_at,
+        )
+        self.session.add(record)
+        await self.session.commit()
+        await self.session.refresh(record)
+        return record
+
+    async def get_credential(
+        self,
+        tenant_id: str,
+        credential_id: str,
+        include_inactive: bool = False,
+    ) -> Optional[CredentialModel]:
+        """Get credential by ID within tenant."""
+        conditions = [
+            CredentialModel.tenant_id == tenant_id,
+            CredentialModel.id == credential_id,
+        ]
+        if not include_inactive:
+            conditions.append(CredentialModel.is_active == True)  # noqa: E712
+        result = await self.session.execute(
+            select(CredentialModel).where(*conditions)
+        )
+        return result.scalar_one_or_none()
+
+    async def list_credentials(
+        self,
+        tenant_id: str,
+        service_name: Optional[str] = None,
+        credential_type: Optional[str] = None,
+        persona_name: Optional[str] = None,
+        include_inactive: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[CredentialModel]:
+        """List credentials for a tenant with optional filters."""
+        conditions = [CredentialModel.tenant_id == tenant_id]
+        if not include_inactive:
+            conditions.append(CredentialModel.is_active == True)  # noqa: E712
+        if service_name is not None:
+            conditions.append(CredentialModel.service_name == service_name)
+        if credential_type is not None:
+            conditions.append(CredentialModel.credential_type == credential_type)
+        result = await self.session.execute(
+            select(CredentialModel).where(*conditions)
+        )
+        rows = list(result.scalars().all())
+        # persona_name filter: Python-side on JSON column
+        if persona_name is not None:
+            rows = [r for r in rows if persona_name in (r.scoped_personas or [])]
+        return rows[offset: offset + limit]
+
+    async def update_credential(
+        self, tenant_id: str, credential_id: str, updates: dict
+    ) -> Optional[CredentialModel]:
+        """Apply partial updates to a credential."""
+        allowed = {
+            "name", "credential_type", "service_name", "encrypted_data",
+            "scoped_personas", "expires_at",
+        }
+        bad = set(updates) - allowed
+        if bad:
+            raise ValueError(f"Unknown credential update keys: {bad}")
+        result = await self.session.execute(
+            select(CredentialModel).where(
+                CredentialModel.tenant_id == tenant_id,
+                CredentialModel.id == credential_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return None
+        for key, value in updates.items():
+            setattr(record, key, value)
+        record.updated_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        await self.session.refresh(record)
+        return record
+
+    async def delete_credential(self, tenant_id: str, credential_id: str) -> bool:
+        """Soft-delete a credential (sets is_active=False, preserves audit trail)."""
+        result = await self.session.execute(
+            select(CredentialModel).where(
+                CredentialModel.tenant_id == tenant_id,
+                CredentialModel.id == credential_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return False
+        record.is_active = False
+        record.updated_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        return True
+
+    # ── MCP Servers ──
+
+    @staticmethod
+    def _validate_mcp_transport(transport: str, url: Optional[str], command: Optional[str]) -> None:
+        """Raise ValueError if transport/url/command combination is invalid."""
+        if transport == "stdio":
+            if not command:
+                raise ValueError("stdio transport requires 'command'")
+        elif transport in ("sse", "streamable_http"):
+            if not url:
+                raise ValueError(f"{transport} transport requires 'url'")
+        else:
+            raise ValueError(f"Unknown transport: {transport!r}. Must be stdio, sse, or streamable_http")
+
+    async def save_mcp_server(
+        self,
+        tenant_id: str,
+        name: str,
+        transport: str,
+        url: Optional[str] = None,
+        command: Optional[str] = None,
+        args: Optional[list] = None,
+        env: Optional[dict] = None,
+        enabled: bool = True,
+    ) -> MCPServerModel:
+        """Create a new MCP server configuration."""
+        self._validate_mcp_transport(transport, url, command)
+        record = MCPServerModel(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            name=name,
+            transport=transport,
+            url=url,
+            command=command,
+            args=args if args is not None else [],
+            env=env if env is not None else {},
+            enabled=enabled,
+            discovered_tools=[],
+            last_connected_at=None,
+            created_at=datetime.now(timezone.utc),
+        )
+        self.session.add(record)
+        await self.session.commit()
+        await self.session.refresh(record)
+        return record
+
+    async def get_mcp_server(
+        self, tenant_id: str, server_id: str
+    ) -> Optional[MCPServerModel]:
+        """Get MCP server by ID within tenant."""
+        result = await self.session.execute(
+            select(MCPServerModel).where(
+                MCPServerModel.tenant_id == tenant_id,
+                MCPServerModel.id == server_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def list_mcp_servers(
+        self,
+        tenant_id: str,
+        enabled: Optional[bool] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[MCPServerModel]:
+        """List MCP servers for a tenant, ordered by name."""
+        conditions = [MCPServerModel.tenant_id == tenant_id]
+        if enabled is not None:
+            conditions.append(MCPServerModel.enabled == enabled)
+        result = await self.session.execute(
+            select(MCPServerModel)
+            .where(*conditions)
+            .order_by(MCPServerModel.name.asc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all())
+
+    async def update_mcp_server(
+        self, tenant_id: str, server_id: str, updates: dict
+    ) -> Optional[MCPServerModel]:
+        """Apply partial updates to an MCP server configuration."""
+        allowed = {
+            "name", "url", "transport", "command", "args", "env",
+            "enabled", "discovered_tools", "last_connected_at",
+        }
+        bad = set(updates) - allowed
+        if bad:
+            raise ValueError(f"Unknown MCP server update keys: {bad}")
+        result = await self.session.execute(
+            select(MCPServerModel).where(
+                MCPServerModel.tenant_id == tenant_id,
+                MCPServerModel.id == server_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return None
+        for key, value in updates.items():
+            setattr(record, key, value)
+        # Re-validate transport consistency if transport-related fields changed
+        transport_keys = {"transport", "url", "command"}
+        if transport_keys & set(updates):
+            transport = updates.get("transport", record.transport)
+            url = updates.get("url", record.url)
+            command = updates.get("command", record.command)
+            self._validate_mcp_transport(transport, url, command)
+        await self.session.commit()
+        await self.session.refresh(record)
+        return record
+
+    async def delete_mcp_server(self, tenant_id: str, server_id: str) -> bool:
+        """Hard-delete an MCP server configuration."""
+        result = await self.session.execute(
+            select(MCPServerModel).where(
+                MCPServerModel.tenant_id == tenant_id,
+                MCPServerModel.id == server_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        if record is None:
+            return False
+        await self.session.delete(record)
+        await self.session.commit()
+        return True

@@ -291,7 +291,7 @@ frontend/           # React dashboard (Vite, port 5173) — 57+ source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (1728 tests — phases 0-27)
+tests/              # pytest suite (1761 tests — phases 0-28)
 ```
 
 ## CLI
@@ -478,7 +478,8 @@ flowchart LR
 | 25 | Frontend v2 + Skills System — Skills CRUD + versioning, Credentials vault UI (/peek, no secrets), MCP Servers, Executions + ChainReplay, GateBar/GateChip, React Query, Zustand, SSE event stream | ✅ Done |
 | 26 | Background Execution — ARQ task queue, `WorkflowDispatcher` (inline/background routing, 5-step threshold), `POST /v2/workflows/{id}/run`, `GET /v2/jobs/{job_id}`, `TriggerManager.set_dispatcher()` | ✅ Done |
 | 27 | Plugin Marketplace — `nexus-plugin-*` PyPI ecosystem, `PluginManifest` + `@nexus_plugin_tool` SDK, `PluginRegistry` (install/upgrade/verify), 15-threat CVE security model, `nexus plugin` CLI (7 sub-commands) | ✅ Done |
-| 28–32 | Alembic v2 migrations, full API v2 routes, test suite v2, infrastructure v2, examples & docs v2 | 🔲 Planned |
+| 28 | Persistence v2 — Alembic migrations (async), 15 new repository methods (workflow/credential/MCP CRUD), seed v2 data, `CredentialModel.is_active`, `MCPServerModel.url` nullable | ✅ Done |
+| 29–32 | Full API v2 routes, test suite v2, infrastructure v2, examples & docs v2 | 🔲 Planned |
 
 See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.
 
