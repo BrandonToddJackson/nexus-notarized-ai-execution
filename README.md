@@ -212,9 +212,14 @@ flowchart LR
         MCPE["stdio · SSE · streamable_http\ntransports · credential injection"]
     end
 
+    subgraph MARKET["Plugin Marketplace (community)"]
+        PKG["nexus-plugin-{name} on PyPI\n@nexus_plugin_tool decorated\nSHA-256 tamper-verified"]
+    end
+
     TR[Tool Registry] --> BUILTIN
     TR --> SANDBOX
     TR --> MCP_TOOLS
+    TR --> MARKET
 ```
 
 Same model throughout: one agent, multiple personas (see top of README). Workflows can use **multiple personas** (per-step `persona_name`) and **parallel branches** (PARALLEL step type).
@@ -278,6 +283,7 @@ nexus/
 ├── cache/          # Redis: fingerprint store, rate limiting, distributed locks
 ├── auth/           # JWT, middleware, rate limiter
 ├── api/            # FastAPI v1 routes + schemas
+├── marketplace/    # Plugin Marketplace: SDK (PluginManifest, @nexus_plugin_tool), registry, validator, scaffolder
 ├── cli/            # Typer CLI commands + project templates
 ├── callbacks/      # NexusCallback protocol + LoggingCallback
 ├── config/         # NexusConfig (BaseSettings) + YAML loaders
@@ -285,7 +291,7 @@ frontend/           # React dashboard (Vite, port 5173) — 57+ source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (1630 tests — phases 0-26)
+tests/              # pytest suite (1728 tests — phases 0-27)
 ```
 
 ## CLI
@@ -308,6 +314,16 @@ nexus gates [--stats]     # Show gate thresholds + per-gate pass/fail counts
 # Introspection
 nexus config              # Resolved config with env var names (secrets masked)
 nexus tools               # Registered tools with risk levels
+
+# Plugin Marketplace
+nexus plugin install weather                      # Install from PyPI
+nexus plugin install nexus-plugin-github==2.0.0  # Specific version
+nexus plugin uninstall weather                    # Remove plugin + tools
+nexus plugin list                                 # Installed plugins + tool counts
+nexus plugin search slack                         # Search PyPI for nexus-plugin-* packages
+nexus plugin upgrade weather                      # Upgrade to latest (or --version)
+nexus plugin new my-tool                          # Scaffold a new plugin package
+nexus plugin verify [plugin-name]                 # SHA-256 tamper detection (all or one)
 ```
 
 ## API
@@ -362,6 +378,14 @@ NEXUS is designed for production agentic workloads. Security hardening applied a
 - CORS: explicit method list (`GET POST PUT DELETE`), not `*`
 - Error responses return generic messages — no stack traces or internal details exposed
 - JWT stored in `sessionStorage` (not `localStorage`) — cleared on tab close, not persisted to disk
+
+**Plugin Supply Chain Security**
+- Static pre-import scan rejects `os.system()`, `subprocess`, `eval()`, `exec()`, raw sockets, and HTTP calls at import time (CVE-2025-14009)
+- SHA-256 checksum fingerprinting at install; `nexus plugin verify` detects post-install file tampering (Ultralytics incident pattern)
+- Levenshtein edit-distance warning on package names ≤2 chars from any installed plugin (typosquatting defence, MUT-8694)
+- `pip install --dry-run` before actual install flags dependency hijacking (CVE-2025-27607)
+- 50,000-char cap on all string parameters passed to plugin tools (prompt injection guard)
+- `setuptools>=78.1.1` enforced at build and runtime (CVE-2025-47273 path traversal + CVE-2024-6345 RCE)
 
 **Rate Limiting**
 - 60 requests/minute per tenant (API)
@@ -453,7 +477,8 @@ flowchart LR
 | 24 | Visual Canvas — React Flow drag-and-drop workflow editor | ✅ Done |
 | 25 | Frontend v2 + Skills System — Skills CRUD + versioning, Credentials vault UI (/peek, no secrets), MCP Servers, Executions + ChainReplay, GateBar/GateChip, React Query, Zustand, SSE event stream | ✅ Done |
 | 26 | Background Execution — ARQ task queue, `WorkflowDispatcher` (inline/background routing, 5-step threshold), `POST /v2/workflows/{id}/run`, `GET /v2/jobs/{job_id}`, `TriggerManager.set_dispatcher()` | ✅ Done |
-| 27–32 | Plugin marketplace, OAuth providers, Alembic v2 migrations, infrastructure, examples & docs | 🔲 Planned |
+| 27 | Plugin Marketplace — `nexus-plugin-*` PyPI ecosystem, `PluginManifest` + `@nexus_plugin_tool` SDK, `PluginRegistry` (install/upgrade/verify), 15-threat CVE security model, `nexus plugin` CLI (7 sub-commands) | ✅ Done |
+| 28–32 | Alembic v2 migrations, full API v2 routes, test suite v2, infrastructure v2, examples & docs v2 | 🔲 Planned |
 
 See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.
 

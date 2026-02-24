@@ -1,0 +1,1 @@
+# Plugin scaffold templates package.

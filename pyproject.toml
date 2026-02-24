@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=78.1.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -30,6 +30,7 @@ dependencies = [
     "jmespath>=1.0.0",
     "croniter>=2.0.0",
     "arq>=0.25.0",
+    "packaging>=23.0",
 ]
 
 [project.optional-dependencies]

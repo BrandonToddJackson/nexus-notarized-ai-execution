@@ -129,6 +129,12 @@ class NexusConfig(BaseSettings):
     ambiguity_generation_model: Optional[str] = None
     max_questions_per_round: int = 5
 
+    # ── Plugin Marketplace (Phase 27) ──
+    plugin_allow_unverified: bool = True           # allow community (unverified) plugins
+    plugin_install_timeout: float = 120.0          # pip install subprocess timeout (seconds)
+    plugin_strict_scan: bool = False               # block import if static scan finds suspicious patterns
+    plugin_dry_run_check: bool = True              # pip --dry-run before install (CVE-2025-27607)
+
     model_config = {"env_prefix": "NEXUS_", "env_file": ".env", "extra": "ignore"}
 
 

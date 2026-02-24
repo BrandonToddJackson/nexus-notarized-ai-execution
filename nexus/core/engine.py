@@ -92,6 +92,7 @@ class NexusEngine:
         callbacks: list = None,
         workflow_manager=None,  # Phase 17
         event_bus=None,  # Phase 22
+        plugin_registry=None,  # Phase 27
     ):
         self.persona_manager = persona_manager
         self.anomaly_engine = anomaly_engine
@@ -113,6 +114,17 @@ class NexusEngine:
         self.callbacks = callbacks or []
         self.workflow_manager = workflow_manager  # Phase 17
         self._event_bus = event_bus  # Phase 22
+        self.plugin_registry = plugin_registry  # Phase 27
+
+    async def load_plugins(self) -> None:
+        """Restore installed plugins from disk and register their tools.
+
+        Call once after constructing the engine (e.g. in the API lifespan).
+        No-op when no plugin_registry is configured.
+        """
+        if self.plugin_registry is not None:
+            await self.plugin_registry.load_state()
+            logger.info("Plugin registry restored.")
 
     async def run(self, task: str, tenant_id: str, persona_name: str = None, callbacks: list = None) -> ChainPlan:
         """FULL EXECUTION LOOP.
