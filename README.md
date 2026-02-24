@@ -447,7 +447,7 @@ flowchart LR
 | 22 | Trigger System — webhooks, cron scheduler, event bus, workflow-complete chaining | ✅ Done |
 | 23 | NL Workflow Generation — natural language → DAG via LLM, iterative refinement, explain | ✅ Done |
 | 23.1 | Ambiguity Resolution — multi-round clarification sessions, specificity scoring, plan sealing | ✅ Done |
-| 24 | Visual Canvas — React Flow drag-and-drop workflow editor | 🔲 Planned |
+| 24 | Visual Canvas — React Flow drag-and-drop workflow editor | ✅ Done |
 | 25–32 | Frontend v2, background workers, plugin marketplace, Alembic v2 migrations, docs | 🔲 Planned |
 
 See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.

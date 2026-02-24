@@ -1,0 +1,44 @@
+.react-flow__background {
+  background-color: #030712;
+}
+
+.react-flow__handle {
+  background-color: #6366f1;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #111827;
+}
+
+.react-flow__controls {
+  background-color: #111827;
+  border-color: #1f2937;
+}
+
+.react-flow__controls-button {
+  background-color: #111827;
+  fill: #9ca3af;
+  border-color: #1f2937;
+}
+
+.react-flow__controls-button:hover {
+  background-color: #1f2937;
+}
+
+.react-flow__minimap {
+  background-color: #111827;
+}
+
+.react-flow__edge-path {
+  stroke: #4b5563;
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #6366f1;
+}
+
+.react-flow__selection {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid #6366f1;
+}

@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from nexus.exceptions import AmbiguityResolutionError
+from nexus.exceptions import AmbiguityResolutionError, WorkflowGenerationError, WorkflowNotFound
 from nexus.types import AmbiguitySessionStatus, ClarifyingAnswer
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,13 @@ def _get_generator(request: Request):
     if gen is None:
         raise HTTPException(status_code=503, detail="WorkflowGenerator not initialised.")
     return gen
+
+
+def _get_manager(request: Request):
+    mgr = getattr(request.app.state, "workflow_manager", None)
+    if mgr is None:
+        raise HTTPException(status_code=503, detail="WorkflowManager not initialised.")
+    return mgr
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -269,4 +276,143 @@ async def generate_from_plan(
         session_id, {"status": AmbiguitySessionStatus.generated}
     )
 
+    return workflow.model_dump()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Workflow CRUD routes
+# ─────────────────────────────────────────────────────────────────────────────
+
+class WorkflowCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    steps: list[dict] = Field(default_factory=list)
+    edges: list[dict] = Field(default_factory=list)
+    created_by: str = ""
+    tags: list[str] = Field(default_factory=list)
+    settings: dict = Field(default_factory=dict)
+    trigger_config: dict = Field(default_factory=dict)
+
+
+class WorkflowStatusRequest(BaseModel):
+    status: str
+
+
+class WorkflowGenerateRequest(BaseModel):
+    description: str = Field(..., min_length=10, max_length=5000)
+
+
+@router.get("/v2/workflows")
+async def list_workflows(
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """List all workflows for the tenant."""
+    workflows = await manager.list(tenant_id)
+    return {"workflows": [w.model_dump() for w in workflows]}
+
+
+@router.post("/v2/workflows", status_code=201)
+async def create_workflow(
+    body: WorkflowCreateRequest,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Create a new workflow."""
+    workflow = await manager.create(
+        tenant_id=tenant_id,
+        name=body.name,
+        description=body.description,
+        steps=body.steps,
+        edges=body.edges,
+        created_by=body.created_by,
+        tags=body.tags,
+        settings=body.settings,
+        trigger_config=body.trigger_config,
+    )
+    return workflow.model_dump()
+
+
+@router.get("/v2/workflows/{workflow_id}")
+async def get_workflow(
+    workflow_id: str,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Get a single workflow by ID."""
+    try:
+        workflow = await manager.get(workflow_id, tenant_id)
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow.model_dump()
+
+
+@router.put("/v2/workflows/{workflow_id}")
+async def update_workflow(
+    workflow_id: str,
+    body: dict,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Full update of a workflow."""
+    try:
+        workflow = await manager.update(
+            workflow_id=workflow_id,
+            tenant_id=tenant_id,
+            name=body.get("name"),
+            description=body.get("description"),
+            steps=body.get("steps"),
+            edges=body.get("edges"),
+            tags=body.get("tags"),
+            settings=body.get("settings"),
+            trigger_config=body.get("trigger_config"),
+        )
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow.model_dump()
+
+
+@router.patch("/v2/workflows/{workflow_id}/status")
+async def update_workflow_status(
+    workflow_id: str,
+    body: WorkflowStatusRequest,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    manager=Depends(_get_manager),
+):
+    """Update workflow status (active, paused, archived)."""
+    status_actions = {
+        "active": manager.activate,
+        "paused": manager.pause,
+        "archived": manager.archive,
+    }
+    action = status_actions.get(body.status)
+    if action is None:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    try:
+        workflow = await action(workflow_id, tenant_id)
+    except WorkflowNotFound:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow.model_dump()
+
+
+@router.post("/v2/workflows/generate")
+async def generate_workflow(
+    body: WorkflowGenerateRequest,
+    request: Request,
+    tenant_id: str = Depends(_get_tenant),
+    generator=Depends(_get_generator),
+):
+    """Generate a workflow from a natural language description."""
+    try:
+        workflow = await generator.generate(
+            description=body.description,
+            tenant_id=tenant_id,
+        )
+    except WorkflowGenerationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return workflow.model_dump()

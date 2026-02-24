@@ -7,6 +7,13 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/v1': 'http://localhost:8000',
+      '/v2': 'http://localhost:8000',
     },
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.js',
+    css: false,
   },
 })
