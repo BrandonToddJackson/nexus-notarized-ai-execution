@@ -508,7 +508,7 @@ flowchart LR
 | 28 | Persistence v2 — Alembic migrations (async), 15 new repository methods (workflow/credential/MCP CRUD), seed v2 data, `CredentialModel.is_active`, `MCPServerModel.url` nullable | ✅ Done |
 | 29 | API v2 Complete — triggers CRUD, webhook catch-all (no JWT), marketplace endpoints, workflow lifecycle (activate/pause/versions/rollback/refine/explain), execution SSE stream + delete, job result, MCP refresh | ✅ Done |
 | 30 | Test suite v2 — 113 fast tests across 8 new files (workflows, dag_engine, credentials, mcp, triggers, http_tool, code_sandbox, api_v2) + 5 Ollama live-LLM tests; bugs fixed in `generator.py` (._validator), Ollama client (num_ctx=8192, 120s timeout) | ✅ Done |
-| 31 | Infrastructure v2 — worker/scheduler Docker services, nginx config | 🔲 Planned |
+| 31 | Infrastructure v2 — nexus-scheduler singleton (Redis distributed lock + heartbeat), nginx reverse proxy (prod profile), chroma service, API healthcheck gating worker/scheduler startup, `frontend/nginx.conf` v2 proxy, dev hot-reload overrides, Makefile targets (`infra`/`worker`/`scheduler`/`prod`/`scale-workers`/`test-fast`/`logs-*`/`fmt`), `.env.example` v2 vars | ✅ Done |
 | 32 | Examples & Docs v2 — Slack→Sheets, email classifier, scheduled report, MCP GitHub examples | 🔲 Planned |
 
 See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.
