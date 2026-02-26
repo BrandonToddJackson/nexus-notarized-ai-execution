@@ -1,15 +1,18 @@
-"""Orchestrates: validate → sandbox execute → capture result.
+"""Orchestrates: validate → credential injection → sandbox execute → capture result.
 
 The last stop before a tool actually runs.
 """
 
 import logging
-from typing import Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 from nexus.types import IntentDeclaration
 from nexus.tools.registry import ToolRegistry
 from nexus.tools.sandbox import Sandbox
 from nexus.core.verifier import IntentVerifier
+
+if TYPE_CHECKING:
+    from nexus.credentials.vault import CredentialVault
 
 logger = logging.getLogger(__name__)
 
@@ -17,28 +20,45 @@ logger = logging.getLogger(__name__)
 class ToolExecutor:
     """Orchestrates tool execution pipeline."""
 
-    def __init__(self, registry: ToolRegistry, sandbox: Sandbox, verifier: IntentVerifier):
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        sandbox: Sandbox,
+        verifier: IntentVerifier,
+        vault: Optional["CredentialVault"] = None,
+    ):
         """
         Args:
             registry: Tool registry
             sandbox: Execution sandbox
             verifier: Intent cross-verifier
+            vault: Optional credential vault; when present, injects credentials
+                   into tool_params if ``credential_id`` is set on the intent.
         """
         self.registry = registry
         self.sandbox = sandbox
         self.verifier = verifier
+        self.vault = vault
 
-    async def execute(self, intent: IntentDeclaration) -> Tuple[Any, Optional[str]]:
+    async def execute(
+        self,
+        intent: IntentDeclaration,
+        tenant_id: str = "",
+        persona_name: Optional[str] = None,
+    ) -> Tuple[Any, Optional[str]]:
         """Execute a tool call with full validation.
 
         Steps:
         1. Get tool from registry
         2. Verify intent matches tool call (IntentVerifier)
-        3. Execute in sandbox
-        4. Return (result, error_string_or_None)
+        3. Inject credentials from vault (if credential_id present in params)
+        4. Execute in sandbox
+        5. Return (result, error_string_or_None)
 
         Args:
             intent: Declared intent with tool name and parameters
+            tenant_id: Calling tenant; required for vault credential lookup.
+            persona_name: Active persona name; used for scoped-credential checks.
 
         Returns:
             Tuple of (result, error). error is None on success.
@@ -57,10 +77,26 @@ class ToolExecutor:
             logger.warning(f"[Executor] Intent verification failed for '{intent.tool_name}': {exc}")
             return None, "Intent verification failed"
 
-        # Step 3: Execute inside sandbox
+        # Step 3: Inject credentials from vault (after gates, before execution)
+        params = dict(intent.tool_params)
+        credential_id = params.pop("credential_id", None)
+        if credential_id and self.vault is not None:
+            try:
+                params = self.vault.inject_credentials(
+                    credential_id=credential_id,
+                    tenant_id=tenant_id,
+                    persona_name=persona_name,
+                    tool_params=params,
+                )
+                logger.debug("[Executor] Injected credentials from vault for credential '%s'", credential_id)
+            except Exception as exc:
+                logger.warning("[Executor] Credential injection failed: %s", exc)
+                return None, f"Credential injection failed: {exc}"
+
+        # Step 4: Execute inside sandbox with (possibly enriched) params
         try:
             result = await self.sandbox.execute(
-                tool_fn, intent.tool_params, definition.timeout_seconds
+                tool_fn, params, definition.timeout_seconds
             )
             return result, None
         except Exception as exc:

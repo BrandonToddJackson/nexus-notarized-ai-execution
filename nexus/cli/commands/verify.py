@@ -50,7 +50,7 @@ async def _verify(chain_id: str, tenant_id: str) -> None:
                 tool_params={}, resource_targets=[], reasoning="",
             ),
             anomaly_result=AnomalyResult(**m_anomaly) if m_anomaly else AnomalyResult(
-                gates=[], overall_verdict=GateVerdict.PASS, risk_level=RiskLevel.LOW, persona_id="", action_fingerprint="",
+                gates=[], overall_verdict=GateVerdict.PASS, risk_level=RiskLevel.LOW, persona_uuid="", action_fingerprint="",
             ),
             tool_name=str(m.tool_name or ""),
             tool_params=dict(m.tool_params) if m.tool_params else {},

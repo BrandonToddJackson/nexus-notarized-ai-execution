@@ -2,7 +2,7 @@
 
 from enum import Enum
 from typing import Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 import uuid
 
@@ -65,14 +65,14 @@ class GateResult(BaseModel):
     score: float                        # 0.0-1.0, meaning varies by gate
     threshold: float                    # configured threshold for this gate
     details: str                        # human-readable explanation
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class AnomalyResult(BaseModel):
     """Combined result of all 4 gates."""
     gates: list[GateResult]             # exactly 4 entries
     overall_verdict: GateVerdict        # FAIL if ANY gate fails
     risk_level: RiskLevel
-    persona_id: str
+    persona_uuid: str                   # UUID of the PersonaContract instance (not the name)
     action_fingerprint: str             # hash of the action for drift comparison
 
 class IntentDeclaration(BaseModel):
@@ -101,7 +101,7 @@ class Seal(BaseModel):
     cot_trace: list[str] = Field(default_factory=list)  # reasoning steps
     fingerprint: str = ""               # Merkle chain hash
     parent_fingerprint: str = ""        # previous seal's fingerprint
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
 
@@ -113,7 +113,7 @@ class ChainPlan(BaseModel):
     steps: list[dict[str, Any]]         # planned steps from LLM decomposition
     status: ChainStatus = ChainStatus.PLANNING
     seals: list[str] = Field(default_factory=list)  # seal IDs in order
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
 
@@ -148,6 +148,49 @@ class SkillDefinition(BaseModel):
     tool_sequence: list[str]            # ordered tool names
     persona: str                        # which persona owns this skill
 
+class SkillVersion(BaseModel):
+    version: int
+    content: str
+    description: str
+    changed_at: datetime
+    change_note: str
+
+class SkillFile(BaseModel):
+    name: str
+    content: str          # base64 for binary, utf-8 for text
+    mime_type: str
+    description: str = ""
+
+class SkillRecord(BaseModel):
+    id: str
+    tenant_id: str
+    name: str                       # lowercase-hyphenated slug, max 64 chars
+    display_name: str
+    description: str                # max 1024 chars
+    content: str                    # Markdown body
+    version: int = 1
+    version_history: list[SkillVersion] = []
+    allowed_tools: list[str] = []
+    allowed_personas: list[str] = []
+    tags: list[str] = []
+    supporting_files: list[SkillFile] = []
+    invocation_count: int = 0
+    last_invoked_at: Optional[datetime] = None
+    active: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+class SkillInvocation(BaseModel):
+    id: str
+    skill_id: str
+    tenant_id: str
+    execution_id: Optional[str] = None
+    workflow_name: Optional[str] = None
+    persona_name: str
+    context_summary: str = ""
+    invoked_at: datetime
+
+
 class KnowledgeDocument(BaseModel):
     """A document in the tenant's knowledge base."""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -158,7 +201,7 @@ class KnowledgeDocument(BaseModel):
     chunks: list[str] = Field(default_factory=list)  # chunked text
     access_level: str = "internal"      # "public", "internal", "restricted", "confidential"
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class RetrievedContext(BaseModel):
     """Context assembled from RAG retrieval for an action."""
@@ -177,4 +220,273 @@ class CostRecord(BaseModel):
     input_tokens: int
     output_tokens: int
     cost_usd: float
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# ── Phase 15: Workflow, Trigger, Credential, MCP Types ──────────────────────
+
+
+class WorkflowStatus(str, Enum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    PAUSED = "paused"
+    ARCHIVED = "archived"
+    ERROR = "error"
+
+
+class TriggerType(str, Enum):
+    MANUAL = "manual"
+    WEBHOOK = "webhook"
+    CRON = "cron"
+    EVENT = "event"
+    WORKFLOW_COMPLETE = "workflow_complete"
+
+
+class StepType(str, Enum):
+    ACTION = "action"
+    BRANCH = "branch"
+    LOOP = "loop"
+    PARALLEL = "parallel"
+    SUB_WORKFLOW = "sub_workflow"
+    WAIT = "wait"
+    HUMAN_APPROVAL = "human_approval"
+
+
+class CredentialType(str, Enum):
+    API_KEY = "api_key"
+    OAUTH2 = "oauth2"
+    BASIC_AUTH = "basic_auth"
+    BEARER_TOKEN = "bearer_token"
+    CUSTOM = "custom"
+
+
+class EdgeType(str, Enum):
+    DEFAULT = "default"
+    CONDITIONAL = "conditional"
+    ERROR = "error"
+    LOOP_BACK = "loop_back"
+
+
+class NodePosition(BaseModel):
+    """Canvas coordinates for a workflow step node."""
+    x: float = 0.0
+    y: float = 0.0
+
+
+class WorkflowStep(BaseModel):
+    """A single node in a workflow graph."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    workflow_id: str
+    step_type: StepType
+    name: str
+    description: str = ""
+    tool_name: Optional[str] = None
+    tool_params: dict[str, Any] = Field(default_factory=dict)
+    persona_name: str = "researcher"
+    position: NodePosition = Field(default_factory=NodePosition)
+    # step_type-specific config: branch conditions, loop iterators,
+    # parallel groups, sub_workflow_id, approval instructions, etc.
+    config: dict[str, Any] = Field(default_factory=dict)
+    timeout_seconds: int = 30
+    retry_policy: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowEdge(BaseModel):
+    """A directed connection between two workflow steps."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    workflow_id: str
+    source_step_id: str
+    target_step_id: str
+    edge_type: EdgeType = EdgeType.DEFAULT
+    condition: Optional[str] = None     # expression string or "default"
+    data_mapping: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowDefinition(BaseModel):
+    """A reusable, versioned workflow graph."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    name: str
+    description: str = ""
+    version: int = 1
+    status: WorkflowStatus = WorkflowStatus.DRAFT
+    trigger_config: dict[str, Any] = Field(default_factory=dict)
+    steps: list[WorkflowStep] = Field(default_factory=list)
+    edges: list[WorkflowEdge] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by: str = ""
+    tags: list[str] = Field(default_factory=list)
+    # settings keys: timeout_seconds, retry_policy, error_workflow_id
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowExecution(BaseModel):
+    """A single run of a WorkflowDefinition."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    workflow_id: str
+    workflow_version: int
+    tenant_id: str
+    trigger_type: TriggerType
+    trigger_data: dict[str, Any] = Field(default_factory=dict)
+    chain_id: str = ""                  # NEXUS chain that executed the steps
+    status: ChainStatus = ChainStatus.PLANNING
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+    step_results: dict[str, Any] = Field(default_factory=dict)
+
+
+class TriggerConfig(BaseModel):
+    """Configuration for a workflow trigger (cron, webhook, event, etc.)."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    workflow_id: str
+    tenant_id: str
+    trigger_type: TriggerType
+    enabled: bool = True
+    # config keys: cron_expression, event_name, source_workflow_id
+    config: dict[str, Any] = Field(default_factory=dict)
+    webhook_path: Optional[str] = None
+    last_triggered_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class CredentialRecord(BaseModel):
+    """Encrypted credential scoped to a tenant (and optionally specific personas)."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    name: str                           # human-readable label, e.g. "GitHub PAT"
+    credential_type: CredentialType
+    service_name: str                   # e.g. "github", "stripe", "sendgrid"
+    encrypted_data: str                 # AES-256-GCM ciphertext (base64)
+    scoped_personas: list[str] = Field(default_factory=list)  # [] = all personas
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: Optional[datetime] = None
+
+
+class MCPServerConfig(BaseModel):
+    """Configuration for a connected MCP tool server."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    name: str
+    url: str
+    transport: str                      # "stdio" | "sse" | "streamable_http"
+    command: Optional[str] = None       # for stdio transport: executable path
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    credential_id: Optional[str] = None  # vault credential to inject as env vars
+    enabled: bool = True
+    discovered_tools: list[str] = Field(default_factory=list)
+    last_connected_at: Optional[datetime] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 23.1: Ambiguity Resolution Types
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AmbiguitySessionStatus(str, Enum):
+    """Lifecycle states of a clarification session."""
+    active     = "active"      # Questions outstanding, awaiting user answers.
+    complete   = "complete"    # All gaps resolved. WorkflowPlan produced.
+    abandoned  = "abandoned"   # TTL expired or user explicitly cancelled.
+    generated  = "generated"   # WorkflowDefinition created from this session.
+
+
+class QuestionType(str, Enum):
+    """Controls how the frontend renders the answer widget."""
+    single_choice  = "single_choice"   # Radio buttons. One answer from options list.
+    multi_choice   = "multi_choice"    # Checkboxes. One or more answers from options.
+    text           = "text"            # Free-text input (constrained by max_chars).
+    boolean        = "boolean"         # Yes / No.
+    number         = "number"          # Integer or float with optional min/max.
+
+
+class ClarifyingQuestion(BaseModel):
+    """
+    A single structured question produced by the AmbiguityResolver.
+    """
+    id: str                         # UUID. Stable across rerenders.
+    session_id: str                 # Parent session ID.
+    dimension: str                  # What aspect is being clarified.
+    question: str                   # Human-readable question text.
+    question_type: QuestionType
+    options: list[str] = Field(default_factory=list)
+    required: bool = True
+    default: Optional[Any] = None
+    hint: Optional[str] = None
+    maps_to_param: str              # The WorkflowPlanParameter key this answer populates.
+    max_chars: Optional[int] = None
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+
+
+class ClarifyingAnswer(BaseModel):
+    """A user's answer to a single ClarifyingQuestion."""
+    question_id: str
+    session_id: str
+    value: Any                      # str | list[str] | bool | int | float
+    answered_at: datetime
+
+
+class SpecificityScore(BaseModel):
+    """
+    Result of the specificity analysis. Not persisted — computed fresh each time.
+    """
+    score: float                    # 0.0 = completely vague. 1.0 = fully specified.
+    dimensions_resolved: list[str]
+    dimensions_missing: list[str]
+    tool_coverage_ratio: float
+    has_trigger: bool
+    has_success_condition: bool
+    has_scope_boundary: bool
+    reasoning: str
+    can_auto_generate: bool         # True if score >= config.ambiguity_auto_generate_threshold.
+
+
+class WorkflowPlanParameter(BaseModel):
+    """
+    A single resolved parameter passed to WorkflowGenerator.generate() as context.
+    """
+    key: str
+    value: Any
+    source: str                     # "user_answer" | "inferred" | "default"
+    confidence: float               # 0.0–1.0.
+    confirmed_at: Optional[datetime] = None
+
+
+class WorkflowPlan(BaseModel):
+    """
+    The output of a completed AmbiguitySession.
+    Represents human-confirmed scope before any workflow is generated.
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str
+    tenant_id: str
+    original_description: str
+    refined_description: str
+    parameters: list[WorkflowPlanParameter] = Field(default_factory=list)
+    specificity_score: float
+    seal_fingerprint: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    workflow_definition_id: Optional[str] = None
+
+
+class AmbiguitySession(BaseModel):
+    """
+    Persistent record of a clarification session.
+    Stored in DB. May span multiple HTTP requests.
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    original_description: str
+    status: AmbiguitySessionStatus = AmbiguitySessionStatus.active
+    questions: list[ClarifyingQuestion] = Field(default_factory=list)
+    answers: list[ClarifyingAnswer] = Field(default_factory=list)
+    current_round: int = 1
+    max_rounds: int = 3
+    specificity_history: list[float] = Field(default_factory=list)
+    plan: Optional[WorkflowPlan] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

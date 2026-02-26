@@ -5,6 +5,7 @@ All tests should use these fixtures for consistency.
 
 import json
 import pytest
+from cryptography.fernet import Fernet
 
 from nexus.types import PersonaContract, RiskLevel, ToolDefinition, RetrievedContext
 from nexus.config import NexusConfig
@@ -210,3 +211,153 @@ def engine(sample_personas, mock_llm_client):
         llm_client=mock_llm_client,
         config=cfg,
     )
+
+
+# ── Phase 30: v2 fixtures ─────────────────────────────────────────────────────
+
+# Well-known tenant IDs for isolation tests
+TENANT_A = "tenant-alpha-001"
+TENANT_B = "tenant-beta-002"
+
+# Stable Fernet key for the entire test session (ephemeral — regenerated each run)
+_TEST_FERNET_KEY: str = Fernet.generate_key().decode()
+
+
+@pytest.fixture
+def test_config():
+    """NexusConfig with encryption key and safe test defaults."""
+    return NexusConfig(
+        debug=True,
+        database_url="sqlite+aiosqlite:///test.db",
+        redis_url="redis://localhost:6379/15",
+        default_llm_model="mock/test-model",
+        secret_key="test-secret-key-phase30",
+        credential_encryption_key=_TEST_FERNET_KEY,
+    )
+
+
+@pytest.fixture
+def encryption():
+    """CredentialEncryption backed by the session Fernet key."""
+    from nexus.credentials.encryption import CredentialEncryption
+    return CredentialEncryption(key=_TEST_FERNET_KEY)
+
+
+@pytest.fixture
+def vault(encryption):
+    """In-memory CredentialVault — no DB required."""
+    from nexus.credentials.vault import CredentialVault
+    return CredentialVault(encryption=encryption)
+
+
+@pytest.fixture
+def linear_workflow_def():
+    """Two-step linear workflow: step_a → step_b."""
+    from nexus.types import WorkflowDefinition, WorkflowStep, WorkflowEdge, StepType, EdgeType
+    wf_id = "wf-linear-test"
+    step_a = WorkflowStep(id="step-a", workflow_id=wf_id, step_type=StepType.ACTION, name="step_a", tool_name="knowledge_search")
+    step_b = WorkflowStep(id="step-b", workflow_id=wf_id, step_type=StepType.ACTION, name="step_b", tool_name="knowledge_search")
+    edge = WorkflowEdge(id="edge-1", workflow_id=wf_id, source_step_id="step-a", target_step_id="step-b")
+    return WorkflowDefinition(
+        id=wf_id,
+        tenant_id=TENANT_A,
+        name="Linear Workflow",
+        steps=[step_a, step_b],
+        edges=[edge],
+    )
+
+
+@pytest.fixture
+def cyclic_workflow_def():
+    """Intentionally cyclic workflow — for validation failure tests."""
+    from nexus.types import WorkflowDefinition, WorkflowStep, WorkflowEdge, StepType, EdgeType
+    wf_id = "wf-cyclic-test"
+    step_a = WorkflowStep(id="step-a", workflow_id=wf_id, step_type=StepType.ACTION, name="step_a")
+    step_b = WorkflowStep(id="step-b", workflow_id=wf_id, step_type=StepType.ACTION, name="step_b")
+    edge_ab = WorkflowEdge(id="edge-ab", workflow_id=wf_id, source_step_id="step-a", target_step_id="step-b")
+    edge_ba = WorkflowEdge(id="edge-ba", workflow_id=wf_id, source_step_id="step-b", target_step_id="step-a")
+    return WorkflowDefinition(
+        id=wf_id,
+        tenant_id=TENANT_A,
+        name="Cyclic Workflow",
+        steps=[step_a, step_b],
+        edges=[edge_ab, edge_ba],
+    )
+
+
+@pytest.fixture
+def branch_workflow_def():
+    """Branch workflow: branch_node → [path_b (default), path_c (conditional)]."""
+    from nexus.types import WorkflowDefinition, WorkflowStep, WorkflowEdge, StepType, EdgeType
+    wf_id = "wf-branch-test"
+    step_a = WorkflowStep(id="step-a", workflow_id=wf_id, step_type=StepType.BRANCH, name="branch_node")
+    step_b = WorkflowStep(id="step-b", workflow_id=wf_id, step_type=StepType.ACTION, name="path_b")
+    step_c = WorkflowStep(id="step-c", workflow_id=wf_id, step_type=StepType.ACTION, name="path_c")
+    edge_ab = WorkflowEdge(
+        id="e-ab", workflow_id=wf_id,
+        source_step_id="step-a", target_step_id="step-b",
+        edge_type=EdgeType.DEFAULT,
+    )
+    edge_ac = WorkflowEdge(
+        id="e-ac", workflow_id=wf_id,
+        source_step_id="step-a", target_step_id="step-c",
+        edge_type=EdgeType.CONDITIONAL, condition="status == 'error'",
+    )
+    return WorkflowDefinition(
+        id=wf_id,
+        tenant_id=TENANT_A,
+        name="Branch Workflow",
+        steps=[step_a, step_b, step_c],
+        edges=[edge_ab, edge_ac],
+    )
+
+
+@pytest.fixture
+def loop_workflow_def():
+    """Loop workflow: init → loop_node (loop_back to body, default to exit)."""
+    from nexus.types import WorkflowDefinition, WorkflowStep, WorkflowEdge, StepType, EdgeType
+    wf_id = "wf-loop-test"
+    step_a = WorkflowStep(id="step-a", workflow_id=wf_id, step_type=StepType.ACTION, name="init")
+    step_l = WorkflowStep(id="step-l", workflow_id=wf_id, step_type=StepType.LOOP, name="loop_node", config={"max_iterations": 5})
+    step_b = WorkflowStep(id="step-b", workflow_id=wf_id, step_type=StepType.ACTION, name="loop_body")
+    step_c = WorkflowStep(id="step-c", workflow_id=wf_id, step_type=StepType.ACTION, name="exit_step")
+    edge_al = WorkflowEdge(id="e-al", workflow_id=wf_id, source_step_id="step-a", target_step_id="step-l")
+    edge_lb = WorkflowEdge(id="e-lb", workflow_id=wf_id, source_step_id="step-l", target_step_id="step-b", edge_type=EdgeType.LOOP_BACK)
+    edge_lc = WorkflowEdge(id="e-lc", workflow_id=wf_id, source_step_id="step-l", target_step_id="step-c", edge_type=EdgeType.DEFAULT)
+    return WorkflowDefinition(
+        id=wf_id,
+        tenant_id=TENANT_A,
+        name="Loop Workflow",
+        steps=[step_a, step_l, step_b, step_c],
+        edges=[edge_al, edge_lb, edge_lc],
+    )
+
+
+@pytest.fixture
+def parallel_workflow_def():
+    """Parallel workflow: entry → [parallel_a, parallel_b] → merge."""
+    from nexus.types import WorkflowDefinition, WorkflowStep, WorkflowEdge, StepType, EdgeType
+    wf_id = "wf-parallel-test"
+    step_e = WorkflowStep(id="step-e", workflow_id=wf_id, step_type=StepType.ACTION, name="entry")
+    step_pa = WorkflowStep(id="step-pa", workflow_id=wf_id, step_type=StepType.PARALLEL, name="parallel_a")
+    step_pb = WorkflowStep(id="step-pb", workflow_id=wf_id, step_type=StepType.PARALLEL, name="parallel_b")
+    step_m = WorkflowStep(id="step-m", workflow_id=wf_id, step_type=StepType.ACTION, name="merge")
+    edge_epa = WorkflowEdge(id="e-epa", workflow_id=wf_id, source_step_id="step-e", target_step_id="step-pa")
+    edge_epb = WorkflowEdge(id="e-epb", workflow_id=wf_id, source_step_id="step-e", target_step_id="step-pb")
+    edge_pam = WorkflowEdge(id="e-pam", workflow_id=wf_id, source_step_id="step-pa", target_step_id="step-m")
+    edge_pbm = WorkflowEdge(id="e-pbm", workflow_id=wf_id, source_step_id="step-pb", target_step_id="step-m")
+    return WorkflowDefinition(
+        id=wf_id,
+        tenant_id=TENANT_A,
+        name="Parallel Workflow",
+        steps=[step_e, step_pa, step_pb, step_m],
+        edges=[edge_epa, edge_epb, edge_pam, edge_pbm],
+    )
+
+
+@pytest.fixture
+async def auth_headers():
+    """JWT Authorization headers for TENANT_A (uses global config.secret_key)."""
+    from nexus.auth.jwt import JWTManager
+    token = await JWTManager().create_token(TENANT_A)
+    return {"Authorization": f"Bearer {token}"}

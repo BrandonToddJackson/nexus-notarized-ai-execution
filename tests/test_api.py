@@ -211,16 +211,40 @@ class TestLedgerEndpoint:
         resp = client_with_state.get("/v1/ledger?offset=-1", headers=auth_headers)
         assert resp.status_code == 422
 
-    def test_ledger_chain_endpoint_returns_200(self, client_with_state, auth_headers):
+    def test_ledger_chain_endpoint_unknown_returns_404(self, client_with_state, auth_headers):
+        """Unknown chain IDs return 404 — existence of another tenant's chain is not confirmed."""
         resp = client_with_state.get("/v1/ledger/nonexistent-chain", headers=auth_headers)
-        assert resp.status_code == 200  # empty seals, not 404
+        assert resp.status_code == 404
 
-    def test_ledger_chain_response_has_chain_id(self, client_with_state, auth_headers):
+    def test_ledger_chain_response_has_seals_when_found(self, client_with_state, auth_headers):
+        """Chain detail returns seals list when the chain exists for this tenant."""
+        from nexus.types import (
+            Seal, IntentDeclaration, AnomalyResult, GateResult, GateVerdict,
+            RiskLevel, ActionStatus,
+        )
+        import asyncio
+        intent = IntentDeclaration(
+            task_description="t", planned_action="p", tool_name="knowledge_search",
+            tool_params={}, resource_targets=[], reasoning="",
+        )
+        gate = GateResult(gate_name="scope", verdict=GateVerdict.PASS, score=1.0, threshold=1.0, details="")
+        anomaly = AnomalyResult(
+            gates=[gate, gate, gate, gate], overall_verdict=GateVerdict.PASS,
+            risk_level=RiskLevel.LOW, persona_uuid="researcher", action_fingerprint="fp",
+        )
+        seal = Seal(
+            chain_id="my-chain-001", step_index=0, tenant_id="demo",
+            persona_id="researcher", intent=intent, anomaly_result=anomaly,
+            tool_name="knowledge_search", tool_params={}, status=ActionStatus.EXECUTED,
+        )
+        asyncio.run(client_with_state.app.state.ledger.append(seal))
         resp = client_with_state.get("/v1/ledger/my-chain-001", headers=auth_headers)
+        assert resp.status_code == 200
         data = resp.json()
         assert data["chain_id"] == "my-chain-001"
         assert "seals" in data
         assert isinstance(data["seals"], list)
+        assert len(data["seals"]) == 1
 
     def test_ledger_empty_for_fresh_tenant(self, client_with_state, auth_headers):
         resp = client_with_state.get("/v1/ledger", headers=auth_headers)
@@ -419,3 +443,97 @@ class TestExecuteEndpoint:
         assert call_kwargs.kwargs.get("persona_name") == "researcher", (
             f"Route must forward body.persona → persona_name='researcher', got: {call_kwargs}"
         )
+
+
+# ── Execute error paths (Gap 2) ────────────────────────────────────────────────
+
+class TestExecuteErrorPaths:
+
+    def test_anomaly_detected_returns_200_blocked(self, client_with_state, auth_headers):
+        """AnomalyDetected → 200 with status='blocked' (chain was sealed but blocked)."""
+        from unittest.mock import AsyncMock, MagicMock
+        from nexus.exceptions import AnomalyDetected
+
+        exc = AnomalyDetected("scope gate failed", gate_results=[], chain_id="blocked-chain-1")
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(side_effect=exc)
+        client_with_state.app.state.engine = mock_engine
+
+        resp = client_with_state.post(
+            "/v1/execute", json={"task": "blocked task"}, headers=auth_headers
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "blocked"
+
+    def test_chain_aborted_returns_422(self, client_with_state, auth_headers):
+        from unittest.mock import AsyncMock, MagicMock
+        from nexus.exceptions import ChainAborted
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(side_effect=ChainAborted("aborted"))
+        client_with_state.app.state.engine = mock_engine
+
+        resp = client_with_state.post(
+            "/v1/execute", json={"task": "aborted task"}, headers=auth_headers
+        )
+        assert resp.status_code == 422
+
+    def test_escalation_required_returns_422(self, client_with_state, auth_headers):
+        from unittest.mock import AsyncMock, MagicMock
+        from nexus.exceptions import EscalationRequired
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(side_effect=EscalationRequired("need human"))
+        client_with_state.app.state.engine = mock_engine
+
+        resp = client_with_state.post(
+            "/v1/execute", json={"task": "escalate"}, headers=auth_headers
+        )
+        assert resp.status_code == 422
+
+    def test_unexpected_exception_returns_500(self, client_with_state, auth_headers):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(side_effect=RuntimeError("boom"))
+        client_with_state.app.state.engine = mock_engine
+
+        resp = client_with_state.post(
+            "/v1/execute", json={"task": "crash"}, headers=auth_headers
+        )
+        assert resp.status_code == 500
+
+
+# ── JWT expiry (Gap 14) ────────────────────────────────────────────────────────
+
+class TestJWTExpiry:
+
+    def test_expired_jwt_returns_401(self, client):
+        """A JWT with exp in the past must be rejected with 401."""
+        import jwt as pyjwt
+        from datetime import datetime, timezone, timedelta
+        from nexus.config import config as nexus_config
+
+        expired_payload = {
+            "tenant_id": "demo",
+            "role": "user",
+            "exp": datetime.now(timezone.utc) - timedelta(seconds=10),
+            "iat": datetime.now(timezone.utc) - timedelta(hours=1),
+        }
+        expired_token = pyjwt.encode(
+            expired_payload,
+            nexus_config.secret_key,
+            algorithm=nexus_config.jwt_algorithm,
+        )
+        resp = client.get(
+            "/v1/ledger", headers={"Authorization": f"Bearer {expired_token}"}
+        )
+        assert resp.status_code == 401
+
+    def test_malformed_jwt_returns_401(self, client):
+        """A JWT with wrong signature must be rejected with 401."""
+        resp = client.get(
+            "/v1/ledger",
+            headers={"Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJ0ZW5hbnRfaWQiOiJ4In0.bad_sig"},
+        )
+        assert resp.status_code == 401

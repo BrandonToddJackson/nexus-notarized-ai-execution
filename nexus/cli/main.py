@@ -50,6 +50,19 @@ from nexus.cli.commands import config, tools  # noqa: E402
 app.command(name="config", help="Show resolved configuration")(config.config_show)
 app.command(name="tools", help="List all registered tools")(tools.tools_list)
 
+# ── Plugin Marketplace (Phase 27) ──────────────────────────────────────────────
+from nexus.cli.commands import plugin as plugin_cmd  # noqa: E402
+
+plugin_app = typer.Typer(name="plugin", help="Plugin marketplace commands.")
+plugin_app.command("install", help="Install a plugin from PyPI")(plugin_cmd.plugin_install)
+plugin_app.command("uninstall", help="Uninstall a plugin")(plugin_cmd.plugin_uninstall)
+plugin_app.command("list", help="List installed plugins")(plugin_cmd.plugin_list)
+plugin_app.command("search", help="Search the NEXUS plugin marketplace")(plugin_cmd.plugin_search)
+plugin_app.command("upgrade", help="Upgrade an installed plugin")(plugin_cmd.plugin_upgrade)
+plugin_app.command("new", help="Scaffold a new plugin package")(plugin_cmd.plugin_new)
+plugin_app.command("verify", help="Verify plugin checksums (tamper detection)")(plugin_cmd.plugin_verify)
+app.add_typer(plugin_app)
+
 
 if __name__ == "__main__":
     app()

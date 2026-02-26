@@ -96,7 +96,7 @@ def _seal(status: ActionStatus = ActionStatus.EXECUTED, step_index: int = 0) -> 
                           score=1.0, threshold=1.0, details="ok")],
         overall_verdict=GateVerdict.PASS,
         risk_level=RiskLevel.LOW,
-        persona_id="researcher",
+        persona_uuid="researcher",
         action_fingerprint="abc123",
     )
     return Seal(

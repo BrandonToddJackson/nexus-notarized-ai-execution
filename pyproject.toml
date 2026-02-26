@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=78.1.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -25,6 +25,12 @@ dependencies = [
     "typer[all]>=0.9.0",
     "rich>=13.7.0",
     "httpx>=0.27.0",
+    "cryptography>=42.0.0",
+    "mcp>=1.0.0",
+    "jmespath>=1.0.0",
+    "croniter>=2.0.0",
+    "arq>=0.25.0",
+    "packaging>=23.0",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +40,12 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.2.0",
     "mypy>=1.8.0",
+    "httpx[http2]",
+    "aiosqlite>=0.19",
+    "fakeredis[aioredis]>=2.23",
+    "respx>=0.21",
+    "freezegun>=1.5",
+    "mcp-server-fetch>=0.6.0",
 ]
 
 [project.scripts]
@@ -46,6 +58,9 @@ include = ["nexus*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "slow: tests that call a real LLM and may take 60-120s each (run with -m slow)",
+]
 filterwarnings = [
     # Our intentional insecure-default warning is noise in tests
     "ignore::UserWarning:nexus.config",

@@ -46,3 +46,10 @@ Thumbs.db
 CLAUDE.md
 CLAUDE_CODE_INSTRUCTIONS.md
 nexus_definitive_optimizer_v2.py
+NEXUS_BUILD_SPEC.md
+NEXUS_WORKFLOW_SPEC.md
+
+# GitNexus validation tooling (Phase 0)
+tools/gitnexus/
+.gitnexus/
+gitnexus.db

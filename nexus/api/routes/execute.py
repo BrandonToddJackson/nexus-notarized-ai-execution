@@ -74,7 +74,7 @@ async def execute_task(request: Request, body: ExecuteRequest):
         raise HTTPException(status_code=500, detail="Chain not created")
 
     chain_id_str: str = str(chain.id) if chain else (blocked_chain_id or "")
-    seals_raw = await ledger.get_chain(chain_id_str)
+    seals_raw = await ledger.get_chain(chain_id_str, tenant_id=tenant_id)
     seal_responses = [_seal_to_response(s) for s in seals_raw]
 
     # Final result = last executed seal's tool_result (None for blocked chains)

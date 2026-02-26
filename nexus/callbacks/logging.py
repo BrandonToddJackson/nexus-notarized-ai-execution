@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from nexus.callbacks.base import BaseCallback
@@ -12,7 +12,7 @@ logger = logging.getLogger("nexus.audit")
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat() + "Z"
 
 
 class LoggingCallback(BaseCallback):

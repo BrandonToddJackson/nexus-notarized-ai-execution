@@ -51,7 +51,7 @@ def _seal(status: ActionStatus = ActionStatus.EXECUTED, step_index: int = 0) -> 
         gates=[gate, gate, gate, gate],
         overall_verdict=GateVerdict.PASS,
         risk_level=RiskLevel.LOW,
-        persona_id="researcher",
+        persona_uuid="researcher",
         action_fingerprint="fp",
     )
     intent = IntentDeclaration(
