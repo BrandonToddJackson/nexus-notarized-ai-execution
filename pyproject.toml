@@ -45,6 +45,7 @@ dev = [
     "fakeredis[aioredis]>=2.23",
     "respx>=0.21",
     "freezegun>=1.5",
+    "mcp-server-fetch>=0.6.0",
 ]
 
 [project.scripts]
