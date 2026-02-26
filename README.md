@@ -288,6 +288,116 @@ NEXUS_DEFAULT_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 NEXUS_ENV=production                        # Disables demo key fallback
 ```
 
+---
+
+## Growth OS (branch: `growth-os`)
+
+> **Status:** Active development — not yet merged to `main`.
+
+The `growth-os` branch adds an AI-powered outbound sales growth engine on top of the NEXUS platform. The `sales_growth_agent` persona gains a suite of real-world tools for LinkedIn outreach, lead enrichment, email sequencing, and voice calls — all gated and sealed through the standard NEXUS 4-gate pipeline.
+
+### What's been built
+
+| Tool | Integration | Description |
+|------|------------|-------------|
+| `linkedin_get_profile` | LinkedIn Voyager API | Fetch name, headline, summary, URNs via session cookies |
+| `linkedin_send_connection_request` | LinkedIn Voyager API | Send personalized connection request with 5-layer safety guards |
+| `craft_linkedin_message` | LiteLLM / Ollama | Generate authentic peer-level outreach note (bannedword-filtered) |
+| `instantly_get_leads` | Instantly.ai | Pull leads from a campaign |
+| `instantly_update_lead` | Instantly.ai | Update lead status / custom fields |
+| `instantly_move_lead` | Instantly.ai | Move lead between campaigns |
+| `retell_initiate_call` | Retell.ai | Trigger outbound AI voice call |
+| `sheets_log_lead` | Google Sheets | Append lead + outcome row to a spreadsheet |
+| `enrich_contact` | Hunter.io / Clearbit | Enrich email/phone from name + domain |
+
+**Orchestrator** (`nexus/core/orchestrators/sales_growth.py`) — `SalesGrowthOrchestrator` runs scheduled background cycles: poll Instantly leads → enrich → LinkedIn outreach → voice call → log to Sheets. For ad-hoc use, invoke the `sales_growth_agent` persona directly through the API or CLI.
+
+### LinkedIn connection request — technical notes
+
+Uses LinkedIn's internal **Voyager API** (same endpoints the browser calls). No third-party service required.
+
+- **Endpoint (confirmed 2026-02-10 via DevTools capture):**
+  ```
+  POST /voyager/api/voyagerRelationshipsDashMemberRelationships
+       ?action=verifyQuotaAndCreateV2
+       &decorationId=com.linkedin.voyager.dash.deco.relationships.InvitationCreationResultWithInvitee-2
+  ```
+- **Payload:**
+  ```json
+  {
+    "invitee": {"inviteeUnion": {"memberProfile": "urn:li:fsd_profile:<id>"}},
+    "customMessage": "<note up to 300 chars>"
+  }
+  ```
+- **TLS fingerprint:** `curl_cffi` with `impersonate="chrome131"` (Cloudflare bypass)
+- **Session cookies required:** `li_at`, JSESSIONID (CSRF), `bcookie`, `bscookie`
+- **Cookie lifespan:** `li_at` typically 1 year; `bcookie`/`bscookie` rotate on new logins. Re-capture from DevTools → Application → Cookies → linkedin.com when requests start returning 401/403.
+
+### 5-layer account safety guards
+
+LinkedIn monitors for automated behavior. Every `linkedin_send_connection_request` call passes through:
+
+| Layer | Check | Default |
+|-------|-------|---------|
+| 1. Circuit breaker | Pauses after 3 consecutive errors | — |
+| 2. Time window | Only sends during `LI_SEND_HOURS` | 7am–9pm local |
+| 3. Daily cap | Max sends per calendar day | 10 |
+| 4. Weekly cap | Max sends per rolling 7-day window | 50 |
+| 5. Min interval | Enforced delay between sends (sleeps if needed) | 45 seconds |
+
+State is persisted to `~/.nexus/li_state.json`. Already-messaged profiles are deduped.
+
+### Required environment variables
+
+Add to `.env`:
+
+```bash
+# ── LinkedIn (Voyager session cookies) ────────────────────────────────────────
+# Copy from DevTools → Application → Cookies → linkedin.com
+LI_AT=<li_at cookie value>
+LI_CSRF=ajax:<your-jsessionid>
+LI_BCOOKIE=v=2&<uuid>
+LI_BSCOOKIE=v=1&<timestamp><hex>
+
+# Who you are — used by craft_linkedin_message for peer-level outreach
+LI_SENDER_CONTEXT="AI product manager helping businesses scale with AI"
+
+# Safety guard tuning (all optional — defaults shown)
+LI_DAILY_LIMIT=10
+LI_WEEKLY_LIMIT=50
+LI_SEND_HOURS=7-21          # only send between 7am–9pm local
+LI_MIN_INTERVAL_SECONDS=45
+
+# ── Instantly.ai ──────────────────────────────────────────────────────────────
+INSTANTLY_API_KEY=<your-key>
+
+# ── Cal.com (for scheduling links in outreach) ────────────────────────────────
+CAL_API_KEY=<your-key>
+CAL_BOOKING_URL=https://cal.com/<your-slug>/15min
+```
+
+### Quick test (real account)
+
+```bash
+# Test LinkedIn profile lookup → LLM note generation → connection send
+# (interactive confirm before sending)
+.venv312/bin/python scripts/test_li_real.py
+```
+
+### What's pending before merge to `main`
+
+| Item | Status |
+|------|--------|
+| `nexus sales-growth connect` CLI command | Wired to file, not yet tested end-to-end |
+| Cookie expiry detection + actionable error message | Partial — 401/403 classified, no proactive check |
+| `instantly_*` tools tested against live API | Unit tests only (mocked) |
+| `retell_initiate_call` real-account test | Not yet run |
+| `sheets_log_lead` OAuth flow | API key auth only; OAuth not implemented |
+| Gate 1 scope check for new tools | Tools registered; persona YAML updated |
+| CI secret rotation guide | Not written |
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and PR process.

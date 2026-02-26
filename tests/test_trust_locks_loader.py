@@ -673,14 +673,14 @@ class TestLoadPersonasYaml:
         for p in load_personas_yaml():
             assert isinstance(p, PersonaContract)
 
-    def test_loads_5_default_personas(self):
+    def test_loads_6_default_personas(self):
         from nexus.config.loader import load_personas_yaml
-        assert len(load_personas_yaml()) == 5
+        assert len(load_personas_yaml()) == 6
 
     def test_default_persona_names(self):
         from nexus.config.loader import load_personas_yaml
         names = {p.name for p in load_personas_yaml()}
-        assert names == {"researcher", "analyst", "creator", "communicator", "operator"}
+        assert names == {"researcher", "analyst", "creator", "communicator", "operator", "sales_growth_agent"}
 
     def test_researcher_allowed_tools(self):
         from nexus.config.loader import load_personas_yaml
@@ -934,7 +934,7 @@ class TestConfigLoaderIntegration:
         pm = PersonaManager(contracts)
         personas = pm.list_personas()
         names = {p.name for p in personas}
-        assert names == {"researcher", "analyst", "creator", "communicator", "operator"}
+        assert names == {"researcher", "analyst", "creator", "communicator", "operator", "sales_growth_agent"}
 
     def test_loaded_tools_accepted_by_tool_registry(self, tmp_path):
         from nexus.config.loader import load_tools_yaml

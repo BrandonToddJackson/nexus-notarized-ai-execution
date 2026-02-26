@@ -100,3 +100,81 @@ personas:
     risk_tolerance: high
     max_ttl_seconds: 180
     trust_tier: cold_start
+
+  - name: sales_growth_agent
+    description: >
+      Manages Instantly email campaigns end-to-end as an always-on assistant: audits active campaigns,
+      checks analytics and sender health, creates and activates new campaigns, sends LinkedIn DMs to warm leads,
+      triggers Retell voice calls, and logs all activity to Google Sheets.
+    allowed_tools:
+      # Path 1 — Audit & Optimize
+      - instantly_list_campaigns
+      - instantly_get_campaign_detail
+      - instantly_get_campaign_analytics
+      - instantly_audit_campaigns
+      - instantly_get_leads
+      - instantly_get_accounts
+      - instantly_update_campaign_settings
+      - instantly_update_campaign_sequence
+      # Path 2 — Create
+      - instantly_create_campaign
+      - instantly_activate_campaign
+      - instantly_pause_campaign
+      - instantly_get_lead_lists
+      - instantly_add_lead
+      - instantly_move_leads_to_campaign
+      # Outbound cycle
+      - instantly_get_warm_leads
+      - instantly_mark_lead_as_contacted
+      - enrich_lead_phone
+      - linkedin_send_connection_request
+      - linkedin_send_dm
+      - linkedin_get_profile
+      - craft_linkedin_message
+      - retell_create_batch_call
+      - retell_get_call_status
+      - retell_get_batch_status
+      - sheets_append_row
+      - sheets_log_cycle
+      - sheets_get_sheet_id
+      - sheets_create_sheet
+    resource_scopes:
+      - "crm:campaigns:*"
+      - "crm:leads:*"
+      - "enrichment:phone:*"
+      - "social:linkedin:*"
+      - "voice:calls:*"
+      - "data:sheets:*"
+    # Gate 2 — intent patterns must semantically match orchestrator task strings.
+    # Patterns cover both paths + outbound cycle. Short phrases (3-6 words) maximise
+    # cosine similarity with all-MiniLM-L6-v2 at the 0.30 dev threshold.
+    intent_patterns:
+      # Path 1 — Audit/Optimize
+      - audit email campaigns
+      - check campaign performance
+      - list active campaigns
+      - get campaign analytics
+      - review campaign health
+      - check sender warmup status
+      - get leads in campaign
+      - update campaign settings
+      - update email sequence
+      # Path 2 — Create
+      - create email campaign
+      - build outbound campaign
+      - activate campaign sending
+      - pause email campaign
+      - add lead to campaign
+      - move leads to campaign
+      # Outbound cycle
+      - poll warm leads
+      - enrich lead phone number
+      - send linkedin message
+      - schedule voice calls
+      - log sales cycle results
+      - run outbound sales cycle
+    risk_tolerance: high
+    # Gate 3 — TTL: always-on cycle = audit + poll + linkedin×n + retell + sheets.
+    # 600s (10 min) gives headroom for slow API calls without expiring mid-cycle.
+    max_ttl_seconds: 600
+    trust_tier: cold_start

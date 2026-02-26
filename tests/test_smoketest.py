@@ -1118,7 +1118,7 @@ class TestPhase5Repository:
         assert seals[0].id == seal.id
 
     @pytest.mark.asyncio
-    async def test_seed_database_creates_demo_tenant_and_5_personas(self, db_session):
+    async def test_seed_database_creates_demo_tenant_and_6_personas(self, db_session):
         from nexus.db.seed import seed_database
         await seed_database(db_session)
         from nexus.db.repository import Repository
@@ -1126,10 +1126,11 @@ class TestPhase5Repository:
         tenant = await repo.get_tenant("demo")
         assert tenant is not None
         personas = await repo.list_personas("demo")
-        assert len(personas) == 5
+        assert len(personas) == 6
         names = {p.name for p in personas}
         assert "researcher" in names
         assert "analyst" in names
+        assert "sales_growth_agent" in names
 
     @pytest.mark.asyncio
     async def test_seed_is_idempotent(self, db_session):
@@ -1139,7 +1140,7 @@ class TestPhase5Repository:
         from nexus.db.repository import Repository
         repo = Repository(db_session)
         personas = await repo.list_personas("demo")
-        assert len(personas) == 5
+        assert len(personas) == 6
 
 
 # ─────────────────────────────────────────────────────────────────────────────

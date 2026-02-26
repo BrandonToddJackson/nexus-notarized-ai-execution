@@ -50,6 +50,11 @@ from nexus.cli.commands import config, tools  # noqa: E402
 app.command(name="config", help="Show resolved configuration")(config.config_show)
 app.command(name="tools", help="List all registered tools")(tools.tools_list)
 
+# ── Agent commands ──────────────────────────────────────────────────────────────
+from nexus.cli.commands import sales_growth  # noqa: E402
+
+app.command(name="sales-growth", help="Run the outbound sales growth agent cycle")(sales_growth.run_sales_growth)
+
 
 if __name__ == "__main__":
     app()
