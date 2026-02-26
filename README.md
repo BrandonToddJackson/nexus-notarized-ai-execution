@@ -291,7 +291,7 @@ frontend/           # React dashboard (Vite, port 5173) — 57+ source files
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (1959 tests — phases 0-30; + 5 slow Ollama tests)
+tests/              # pytest suite (1965 tests — phases 0-32; + 5 slow Ollama tests)
 ```
 
 ## CLI
@@ -454,7 +454,7 @@ NEXUS_MCP_CONNECTION_TIMEOUT=10                 # Seconds before MCP server conn
 NEXUS_MCP_TOOL_TIMEOUT=60                       # Per-tool execution timeout
 ```
 
-## v2 Roadmap — AI Automation Platform
+## v2 — AI Automation Platform
 
 NEXUS v2 transforms the single-shot agent framework into a **persistent, trigger-driven automation platform** — every workflow step still passes through all 4 anomaly gates and is sealed in the ledger.
 
@@ -487,7 +487,7 @@ flowchart LR
 
 **The key invariant:** no step in any workflow — regardless of complexity — can bypass the 4-gate security pipeline.
 
-### Phase Status
+### Shipped Phases
 
 | Phase | Feature | Status |
 |-------|---------|--------|
@@ -509,9 +509,7 @@ flowchart LR
 | 29 | API v2 Complete — triggers CRUD, webhook catch-all (no JWT), marketplace endpoints, workflow lifecycle (activate/pause/versions/rollback/refine/explain), execution SSE stream + delete, job result, MCP refresh | ✅ Done |
 | 30 | Test suite v2 — 113 fast tests across 8 new files (workflows, dag_engine, credentials, mcp, triggers, http_tool, code_sandbox, api_v2) + 5 Ollama live-LLM tests; bugs fixed in `generator.py` (._validator), Ollama client (num_ctx=8192, 120s timeout) | ✅ Done |
 | 31 | Infrastructure v2 — nexus-scheduler singleton (Redis distributed lock + heartbeat), nginx reverse proxy (prod profile), chroma service, API healthcheck gating worker/scheduler startup, `frontend/nginx.conf` v2 proxy, dev hot-reload overrides, Makefile targets (`infra`/`worker`/`scheduler`/`prod`/`scale-workers`/`test-fast`/`logs-*`/`fmt`), `.env.example` v2 vars | ✅ Done |
-| 32 | Examples & Docs v2 — Slack→Sheets, email classifier, scheduled report, MCP GitHub examples | 🔲 Planned |
-
-See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.
+| 32 | Examples & Docs v2 — 6 real-world workflow examples (lead qualification, lead nurturing, AI email outreach, content repurposing, personal finance tracker, stock analysis); `examples/_shared/` utilities (`nexus_client`, `demo_data`); `nexus credential check` CLI command | ✅ Done |
 
 ## Contributing
 
