@@ -93,11 +93,15 @@ async def lifespan(app: FastAPI):
         tool_registry.register(definition, impl)
     app.state.tool_registry = tool_registry
 
-    # 8b. MCP servers — register tools from any configured MCP servers
-    from nexus.mcp import MCPServerRegistry, MCPToolAdapter
-    mcp_registry = MCPServerRegistry(config, MCPToolAdapter())
-    await mcp_registry.load_all(tool_registry)
-    app.state.mcp_registry = mcp_registry
+    # 8b. Plugin Marketplace registry (Phase 27/29)
+    from nexus.marketplace import PluginRegistry
+    plugin_registry = PluginRegistry(
+        tool_registry=tool_registry,
+        config=config,
+        persona_manager=persona_manager,
+    )
+    await plugin_registry.load_state()
+    app.state.plugin_registry = plugin_registry
 
     # 9. Build all remaining components
     from nexus.core.anomaly import AnomalyEngine
@@ -131,15 +135,29 @@ async def lifespan(app: FastAPI):
     output_validator = OutputValidator()
     cot_logger = CoTLogger()
     context_builder = ContextBuilder(knowledge_store=knowledge_store)
-    tool_selector = ToolSelector(registry=tool_registry)
+    # LLM client — enables intelligent task decomposition + tool selection via Ollama
+    from nexus.llm.client import LLMClient
+    llm_client = LLMClient(task_type="general")
+
+    tool_selector = ToolSelector(registry=tool_registry, llm_client=llm_client)
     sandbox = Sandbox()
-    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier)
+    from nexus.credentials.encryption import CredentialEncryption
+    from nexus.credentials.vault import CredentialVault
+    credential_encryption = CredentialEncryption(key=config.credential_encryption_key)
+    vault = CredentialVault(encryption=credential_encryption)
+    app.state.vault = vault
+    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier, vault=vault)
     think_act_gate = ThinkActGate()
     continue_complete_gate = ContinueCompleteGate()
     escalate_gate = EscalateGate()
 
-    # 10. NexusEngine
+    # 10. NexusEngine (event_bus injected below — forward reference resolved via set_event_bus)
     from nexus.core.engine import NexusEngine
+    from nexus.triggers import EventBus, TriggerManager, CronScheduler, WebhookHandler
+    from nexus.workflows.manager import WorkflowManager
+
+    event_bus = EventBus()
+
     engine = NexusEngine(
         persona_manager=persona_manager,
         anomaly_engine=anomaly_engine,
@@ -155,9 +173,80 @@ async def lifespan(app: FastAPI):
         think_act_gate=think_act_gate,
         continue_complete_gate=continue_complete_gate,
         escalate_gate=escalate_gate,
+        llm_client=llm_client,
         config=config,
+        event_bus=event_bus,
+        plugin_registry=plugin_registry,
     )
     app.state.engine = engine
+
+    # 11. Trigger system
+    async with async_session() as trigger_session:
+        from nexus.db.repository import Repository as TriggerRepo
+        trigger_repo = TriggerRepo(trigger_session)
+        workflow_manager = WorkflowManager(repository=trigger_repo, config=config)
+        trigger_manager = TriggerManager(engine, workflow_manager, trigger_repo, event_bus, config)
+        cron_scheduler = CronScheduler(trigger_manager, config)
+        webhook_handler = WebhookHandler(trigger_manager, trigger_repo)
+        trigger_manager.set_cron_scheduler(cron_scheduler)
+        await cron_scheduler.start()
+
+    app.state.event_bus        = event_bus
+    app.state.workflow_manager = workflow_manager
+    app.state.trigger_manager  = trigger_manager
+    app.state.webhook_handler  = webhook_handler
+    app.state.cron_scheduler   = cron_scheduler
+
+    # 12. AmbiguityResolver + WorkflowGenerator (Phase 23.1)
+    from nexus.workflows.ambiguity import AmbiguityResolver
+    from nexus.workflows.generator import WorkflowGenerator
+
+    # 13. SkillManager (Phase 25)
+    from nexus.skills.manager import SkillManager
+    skill_manager = SkillManager(
+        repository=None,
+        embedding_service=embedding_service if hasattr(app.state, 'embedding_service') else None,
+        config=config,
+    )
+    app.state.skill_manager = skill_manager
+
+    # 14. MCP adapter (Phase 25)
+    from nexus.mcp.client import MCPClient
+    from nexus.mcp.adapter import MCPToolAdapter
+    mcp_client = MCPClient()
+    mcp_adapter = MCPToolAdapter(tool_registry, mcp_client, None, vault)
+    app.state.mcp_adapter = mcp_adapter
+
+    app.state.ambiguity_resolver = AmbiguityResolver(
+        llm_client=llm_client,
+        tool_registry=tool_registry,
+        persona_manager=persona_manager,
+        config=config,
+    )
+    app.state.workflow_generator = WorkflowGenerator(
+        llm_client=llm_client,
+        tool_registry=tool_registry,
+        persona_manager=persona_manager,
+        workflow_manager=workflow_manager,
+        config=config,
+        skill_manager=skill_manager,
+    )
+
+    # 15. ARQ pool + WorkflowDispatcher (Phase 26)
+    try:
+        from arq import create_pool
+        from arq.connections import RedisSettings
+        from nexus.workers.dispatcher import WorkflowDispatcher
+
+        arq_pool = await create_pool(RedisSettings.from_dsn(config.task_queue_url))
+        app.state.arq_pool = arq_pool
+        app.state.dispatcher = WorkflowDispatcher(engine, arq_pool, config)
+        trigger_manager.set_dispatcher(app.state.dispatcher)
+        logger.info("ARQ pool connected — background workers enabled")
+    except ImportError:
+        app.state.arq_pool = None
+        app.state.dispatcher = None
+        logger.warning("arq not installed — background workers disabled")
 
     logger.info(f"NEXUS v{__version__} ready — {len(tool_registry.list_tools())} tools registered")
 
@@ -165,7 +254,9 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown ──
     logger.info("NEXUS shutting down...")
-    await mcp_registry.shutdown()
+    await cron_scheduler.stop()
+    if getattr(app.state, "arq_pool", None) is not None:
+        await app.state.arq_pool.close()
     await redis_client.close()
 
 
@@ -183,7 +274,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=config.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
         allow_headers=["*"],
     )
 
@@ -196,7 +287,10 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware)
 
     # Routes
-    from nexus.api.routes import execute, stream, ledger, personas, tools, knowledge, health, auth
+    from nexus.api.routes import execute, stream, ledger, personas, tools, knowledge, health, auth, workflows
+    from nexus.api.routes import skills, credentials, mcp_servers, executions, events
+    from nexus.api.routes import triggers, webhooks, marketplace
+    from nexus.api.routes.jobs import router as jobs_router
     app.include_router(execute.router, prefix="/v1")
     app.include_router(stream.router, prefix="/v1")
     app.include_router(ledger.router, prefix="/v1")
@@ -205,6 +299,16 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router, prefix="/v1")
     app.include_router(health.router, prefix="/v1")
     app.include_router(auth.router, prefix="/v1")
+    app.include_router(workflows.router)
+    app.include_router(skills.router, prefix="/v2")
+    app.include_router(credentials.router, prefix="/v2")
+    app.include_router(mcp_servers.router, prefix="/v2")
+    app.include_router(executions.router, prefix="/v2")
+    app.include_router(events.router, prefix="/v2")
+    app.include_router(jobs_router, prefix="/v2/jobs", tags=["jobs"])
+    app.include_router(triggers.router, prefix="/v2")
+    app.include_router(webhooks.router)  # NO prefix — catch-all encodes full path
+    app.include_router(marketplace.router, prefix="/v2")
 
     return app
 

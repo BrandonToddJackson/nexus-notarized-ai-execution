@@ -1,268 +1,303 @@
-"""MCPClient — connects to an MCP server and discovers/calls its tools.
+"""MCPClient — manages connections to MCP tool servers.
 
-Supports two transports:
-- stdio: spawns a subprocess (e.g. npx @modelcontextprotocol/server-slack)
-- sse / streamable_http: connects to an HTTP endpoint
+Supports three transports:
+  - stdio:            subprocess via StdioServerParameters
+  - sse:              HTTP+SSE via sse_client
+  - streamable_http:  HTTP streaming via streamable_http_client
 
-The MCP protocol is JSON-RPC 2.0. This client implements:
-  - initialize  (negotiation)
-  - tools/list  (discovery)
-  - tools/call  (execution)
-
-Reconnect on failure: the client attempts reconnect up to max_retries times
-before raising. This makes it safe to use in the lifespan even if an MCP
-server is temporarily unavailable.
+Tool names are namespaced as ``mcp_{server_name}_{tool_name}`` with
+non-alphanumeric characters replaced by underscores.
 """
 
-import asyncio
-import json
+from __future__ import annotations
+
 import logging
 import os
-from dataclasses import dataclass, field
-from typing import Any, Optional
+import re
+from contextlib import AsyncExitStack
+from typing import Any
+
+from mcp.client.session import ClientSession
+from mcp.client.sse import sse_client
+from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.streamable_http import streamable_http_client
+
+from nexus.exceptions import MCPConnectionError, MCPToolError
+from nexus.types import MCPServerConfig, RiskLevel, ToolDefinition
 
 logger = logging.getLogger(__name__)
 
-# MCP JSON-RPC protocol constants
-_JSONRPC = "2.0"
-_METHOD_INIT = "initialize"
-_METHOD_LIST_TOOLS = "tools/list"
-_METHOD_CALL_TOOL = "tools/call"
+
+def _normalize(s: str) -> str:
+    """Replace non-alphanumeric chars with underscores."""
+    return re.sub(r"[^a-zA-Z0-9]", "_", s)
 
 
-@dataclass
-class MCPToolSpec:
-    """Specification for a tool discovered from an MCP server."""
-    name: str
-    server_name: str
-    description: str
-    input_schema: dict[str, Any] = field(default_factory=dict)
-
-
-class MCPClientError(Exception):
-    """Raised when the MCP client cannot connect or a call fails."""
+def make_tool_name(server_name: str, tool_name: str) -> str:
+    """Build the NEXUS-namespaced tool name for an MCP tool."""
+    return f"mcp_{_normalize(server_name)}_{_normalize(tool_name)}"
 
 
 class MCPClient:
-    """Connects to an MCP server and wraps its tools.
+    """Manages live sessions to one or more MCP servers."""
 
-    Args:
-        server_config: MCPServerConfig from NexusConfig.mcp_servers
-        max_retries: Reconnection attempts before giving up (default 2)
-    """
+    def __init__(self) -> None:
+        # server_id → ClientSession
+        self._sessions: dict[str, ClientSession] = {}
+        # server_id → AsyncExitStack (keeps transport alive)
+        self._exit_stacks: dict[str, AsyncExitStack] = {}
+        # server_id → MCPServerConfig
+        self._configs: dict[str, MCPServerConfig] = {}
+        # server_id → {namespaced_name: original_mcp_name}
+        self._tool_name_map: dict[str, dict[str, str]] = {}
 
-    def __init__(self, server_config: Any, max_retries: int = 2):
-        self._config = server_config
-        self._max_retries = max_retries
-        self._proc: Optional[asyncio.subprocess.Process] = None
-        self._reader: Optional[asyncio.StreamReader] = None
-        self._writer: Optional[asyncio.StreamWriter] = None
-        self._request_id = 0
-        self._connected = False
+    # ------------------------------------------------------------------
+    # Connection
+    # ------------------------------------------------------------------
 
-    @property
-    def server_name(self) -> str:
-        return self._config.name
-
-    async def connect(self) -> None:
-        """Establish connection to the MCP server and run initialize handshake."""
-        transport = getattr(self._config, "transport", "stdio")
-
-        for attempt in range(1, self._max_retries + 2):
-            try:
-                if transport == "stdio":
-                    await self._connect_stdio()
-                else:
-                    await self._connect_http()
-                await self._initialize()
-                self._connected = True
-                logger.info("MCP server '%s' connected (transport=%s)", self.server_name, transport)
-                return
-            except Exception as exc:
-                if attempt > self._max_retries:
-                    raise MCPClientError(
-                        f"MCP server '{self.server_name}' failed to connect after "
-                        f"{self._max_retries + 1} attempt(s): {exc}"
-                    ) from exc
-                logger.warning(
-                    "MCP server '%s' connect attempt %d failed: %s — retrying",
-                    self.server_name, attempt, exc,
-                )
-                await asyncio.sleep(0.5 * attempt)
-
-    async def list_tools(self) -> list[MCPToolSpec]:
-        """Discover tools from the MCP server.
-
-        Returns:
-            List of MCPToolSpec for all tools the server exposes.
-        """
-        if not self._connected:
-            raise MCPClientError(f"MCP server '{self.server_name}' not connected")
-
-        response = await self._send_request(_METHOD_LIST_TOOLS, {})
-        tools_data = response.get("result", {}).get("tools", [])
-
-        specs = []
-        for t in tools_data:
-            specs.append(MCPToolSpec(
-                name=t.get("name", ""),
-                server_name=self.server_name,
-                description=t.get("description", ""),
-                input_schema=t.get("inputSchema", {}),
-            ))
-        return specs
-
-    async def call_tool(self, name: str, params: dict[str, Any]) -> Any:
-        """Call a tool on the MCP server.
+    async def connect(self, server_config: MCPServerConfig) -> list[ToolDefinition]:
+        """Connect to an MCP server and discover its tools.
 
         Args:
-            name: Tool name (as returned by list_tools)
-            params: Tool parameters
+            server_config: Server configuration (transport, url/command, etc.)
 
         Returns:
-            Tool result (may be str, dict, list, etc.)
+            List of ToolDefinitions ready to register in the NEXUS registry.
+
+        Raises:
+            MCPConnectionError: If the connection or tool listing fails.
         """
-        if not self._connected:
-            raise MCPClientError(f"MCP server '{self.server_name}' not connected")
+        server_id = server_config.id
+        if server_id in self._sessions:
+            logger.info("MCP server %s already connected — refreshing", server_config.name)
+            return await self.refresh_tools(server_id)
 
-        response = await self._send_request(
-            _METHOD_CALL_TOOL,
-            {"name": name, "arguments": params},
+        stack = AsyncExitStack()
+        try:
+            session = await self._open_session(stack, server_config)
+            await session.initialize()
+            tools_result = await session.list_tools()
+        except Exception as exc:
+            await stack.aclose()
+            raise MCPConnectionError(
+                f"Failed to connect to MCP server '{server_config.name}': {exc}",
+                server_name=server_config.name,
+            ) from exc
+
+        self._sessions[server_id] = session
+        self._exit_stacks[server_id] = stack
+        self._configs[server_id] = server_config
+
+        definitions, name_map = self._convert_tools(server_config.name, tools_result.tools)
+        self._tool_name_map[server_id] = name_map
+
+        logger.info(
+            "Connected to MCP server '%s' (%s); discovered %d tools",
+            server_config.name,
+            server_config.transport,
+            len(definitions),
         )
+        return definitions
 
-        if "error" in response:
-            err = response["error"]
-            raise MCPClientError(
-                f"MCP tool '{name}' error {err.get('code')}: {err.get('message')}"
-            )
-
-        result = response.get("result", {})
-        # MCP returns content array; extract text for simple cases
-        content = result.get("content", [])
-        if content and isinstance(content, list):
-            texts = [c.get("text", "") for c in content if c.get("type") == "text"]
-            if texts:
-                return "\n".join(texts)
-        return result
-
-    async def disconnect(self) -> None:
-        """Close connection and terminate subprocess if applicable."""
-        self._connected = False
-        transport = getattr(self._config, "transport", "stdio")
-        if transport == "stdio" and self._proc is not None:
-            try:
-                self._proc.terminate()
-                await asyncio.wait_for(self._proc.wait(), timeout=5.0)
-            except Exception:
-                pass
-            self._proc = None
-        elif self._writer is not None:
-            try:
-                self._writer.close()
-            except Exception:
-                pass
-            self._writer = None
-
-    # ── Private transport implementations ────────────────────────────────────
-
-    async def _connect_stdio(self) -> None:
-        """Spawn the MCP server as a subprocess using stdio transport."""
-        command = getattr(self._config, "command", None)
-        if not command:
-            raise MCPClientError(
-                f"MCP server '{self.server_name}': stdio transport requires 'command'"
-            )
-
-        env = dict(os.environ)
-        env.update(getattr(self._config, "env", {}) or {})
-
-        timeout = getattr(self._config, "timeout_seconds", 30)
-        self._proc = await asyncio.create_subprocess_shell(
-            command,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-        self._reader = self._proc.stdout
-        self._writer = self._proc.stdin
-        # Brief wait for server to start
-        await asyncio.sleep(0.2)
-
-    async def _connect_http(self) -> None:
-        """Connect to an SSE/HTTP MCP server. Placeholder for HTTP transport."""
-        url = getattr(self._config, "url", None)
-        if not url:
-            raise MCPClientError(
-                f"MCP server '{self.server_name}': sse/http transport requires 'url'"
-            )
-        # HTTP transport uses a simpler request/response model
-        # Store the url for use in _send_request
-        self._http_url = url
-
-    async def _initialize(self) -> None:
-        """Send MCP initialize request to negotiate capabilities."""
-        response = await self._send_request(
-            _METHOD_INIT,
-            {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "nexus", "version": "1.0"},
-            },
-        )
-        if "error" in response:
-            raise MCPClientError(
-                f"MCP initialize failed for '{self.server_name}': {response['error']}"
-            )
-
-    async def _send_request(self, method: str, params: dict) -> dict:
-        """Send a JSON-RPC request and receive the response."""
-        self._request_id += 1
-        req = {
-            "jsonrpc": _JSONRPC,
-            "id": self._request_id,
-            "method": method,
-            "params": params,
-        }
-
-        transport = getattr(self._config, "transport", "stdio")
-        timeout = getattr(self._config, "timeout_seconds", 30)
+    async def _open_session(
+        self, stack: AsyncExitStack, cfg: MCPServerConfig
+    ) -> ClientSession:
+        """Enter the appropriate transport context and return a ClientSession."""
+        transport = cfg.transport.lower()
 
         if transport == "stdio":
-            return await self._send_stdio(req, timeout)
-        else:
-            return await self._send_http(req, timeout)
+            if not cfg.command:
+                raise MCPConnectionError(
+                    f"stdio transport requires 'command' for server '{cfg.name}'",
+                    server_name=cfg.name,
+                )
+            # Merge extra env vars on top of the inherited environment so
+            # the subprocess keeps PATH, PYTHONPATH, etc. while accepting
+            # overrides like SSL_CERT_FILE.
+            merged_env = {**os.environ, **cfg.env} if cfg.env else None
+            params = StdioServerParameters(
+                command=cfg.command,
+                args=cfg.args,
+                env=merged_env,
+            )
+            read, write = await stack.enter_async_context(stdio_client(params))
 
-    async def _send_stdio(self, req: dict, timeout: int) -> dict:
-        """Send request over stdio pipe."""
-        if self._writer is None or self._reader is None:
-            raise MCPClientError(f"MCP '{self.server_name}': stdio pipe not open")
+        elif transport == "sse":
+            read, write = await stack.enter_async_context(sse_client(url=cfg.url))
 
-        line = json.dumps(req) + "\n"
-        self._writer.write(line.encode())
-        await self._writer.drain()
-
-        try:
-            raw = await asyncio.wait_for(self._reader.readline(), timeout=timeout)
-        except asyncio.TimeoutError:
-            raise MCPClientError(
-                f"MCP '{self.server_name}': timeout waiting for response to '{req['method']}'"
+        elif transport in ("streamable_http", "streamable-http", "http"):
+            read, write, _ = await stack.enter_async_context(
+                streamable_http_client(url=cfg.url)
             )
 
-        if not raw:
-            raise MCPClientError(f"MCP '{self.server_name}': connection closed (empty response)")
+        else:
+            raise MCPConnectionError(
+                f"Unknown transport '{cfg.transport}' for server '{cfg.name}'",
+                server_name=cfg.name,
+            )
 
-        return json.loads(raw.decode().strip())
+        session = await stack.enter_async_context(ClientSession(read, write))
+        return session
 
-    async def _send_http(self, req: dict, timeout: int) -> dict:
-        """Send request over HTTP (SSE/streamable_http transport)."""
+    # ------------------------------------------------------------------
+    # Tool discovery
+    # ------------------------------------------------------------------
+
+    def _convert_tools(
+        self, server_name: str, mcp_tools: list[Any]
+    ) -> tuple[list[ToolDefinition], dict[str, str]]:
+        """Convert MCP Tool objects to NEXUS ToolDefinitions.
+
+        Returns:
+            (definitions, name_map) where name_map is
+            {namespaced_name: original_mcp_name}.
+        """
+        definitions: list[ToolDefinition] = []
+        name_map: dict[str, str] = {}
+
+        for tool in mcp_tools:
+            namespaced = make_tool_name(server_name, tool.name)
+            name_map[namespaced] = tool.name
+
+            defn = ToolDefinition(
+                name=namespaced,
+                description=tool.description or f"MCP tool '{tool.name}' from '{server_name}'",
+                parameters=tool.inputSchema or {"type": "object", "properties": {}},
+                risk_level=RiskLevel.MEDIUM,
+                resource_pattern=f"mcp:{_normalize(server_name)}:*",
+                timeout_seconds=30,
+                requires_approval=False,
+            )
+            definitions.append(defn)
+
+        return definitions, name_map
+
+    async def refresh_tools(self, server_id: str) -> list[ToolDefinition]:
+        """Re-list tools for an already-connected server.
+
+        Args:
+            server_id: Server config ID.
+
+        Returns:
+            Updated list of ToolDefinitions.
+
+        Raises:
+            MCPConnectionError: If the server is not connected or listing fails.
+        """
+        if server_id not in self._sessions:
+            raise MCPConnectionError(
+                f"Server '{server_id}' is not connected",
+                server_name=server_id,
+            )
+        cfg = self._configs[server_id]
         try:
-            import httpx
-        except ImportError:
-            raise MCPClientError("httpx is required for HTTP MCP transport: pip install httpx")
+            tools_result = await self._sessions[server_id].list_tools()
+        except Exception as exc:
+            raise MCPConnectionError(
+                f"Failed to refresh tools for '{cfg.name}': {exc}",
+                server_name=cfg.name,
+            ) from exc
 
-        url = getattr(self, "_http_url", None) or getattr(self._config, "url", "")
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=req)
-            resp.raise_for_status()
-            return resp.json()
+        definitions, name_map = self._convert_tools(cfg.name, tools_result.tools)
+        self._tool_name_map[server_id] = name_map
+        return definitions
+
+    # ------------------------------------------------------------------
+    # Tool execution
+    # ------------------------------------------------------------------
+
+    async def call_tool(
+        self, server_id: str, namespaced_tool_name: str, params: dict[str, Any]
+    ) -> Any:
+        """Execute an MCP tool.
+
+        Args:
+            server_id: Server config ID.
+            namespaced_tool_name: NEXUS-namespaced name (``mcp_{server}_{tool}``).
+            params: Tool parameters.
+
+        Returns:
+            Extracted result — structured content dict if available, else
+            concatenated text from TextContent items.
+
+        Raises:
+            MCPToolError: If the tool execution fails or returns an error.
+            MCPConnectionError: If the server is not connected.
+        """
+        if server_id not in self._sessions:
+            raise MCPConnectionError(
+                f"Server '{server_id}' is not connected",
+                server_name=server_id,
+            )
+
+        name_map = self._tool_name_map.get(server_id, {})
+        original_name = name_map.get(namespaced_tool_name, namespaced_tool_name)
+
+        try:
+            result = await self._sessions[server_id].call_tool(original_name, params)
+        except Exception as exc:
+            raise MCPToolError(
+                f"MCP tool '{original_name}' raised: {exc}",
+                tool_name=namespaced_tool_name,
+            ) from exc
+
+        if result.isError:
+            error_text = self._extract_text(result.content)
+            raise MCPToolError(
+                f"MCP tool '{original_name}' returned error: {error_text}",
+                tool_name=namespaced_tool_name,
+            )
+
+        if result.structuredContent:
+            return result.structuredContent
+
+        return self._extract_text(result.content)
+
+    @staticmethod
+    def _extract_text(content: list[Any]) -> str:
+        """Join text from TextContent items."""
+        parts: list[str] = []
+        for item in content:
+            text = getattr(item, "text", None)
+            if text is not None:
+                parts.append(str(text))
+        return "\n".join(parts) if parts else ""
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def disconnect(self, server_id: str) -> None:
+        """Close the connection to a single MCP server.
+
+        Args:
+            server_id: Server config ID.
+        """
+        stack = self._exit_stacks.pop(server_id, None)
+        self._sessions.pop(server_id, None)
+        self._configs.pop(server_id, None)
+        self._tool_name_map.pop(server_id, None)
+        if stack:
+            await stack.aclose()
+            logger.info("Disconnected MCP server '%s'", server_id)
+
+    async def disconnect_all(self) -> None:
+        """Close all active MCP server connections."""
+        for server_id in list(self._sessions.keys()):
+            await self.disconnect(server_id)
+
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+
+    def is_connected(self, server_id: str) -> bool:
+        """Return True if the server has an active session."""
+        return server_id in self._sessions
+
+    def list_connected(self) -> list[str]:
+        """Return IDs of all currently connected servers."""
+        return list(self._sessions.keys())
+
+    def get_tool_name_map(self, server_id: str) -> dict[str, str]:
+        """Return the {namespaced → original} tool name map for a server."""
+        return dict(self._tool_name_map.get(server_id, {}))

@@ -1,27 +1,19 @@
-"""MCP (Model Context Protocol) adapter layer for NEXUS.
+"""MCP (Model Context Protocol) integration for NEXUS.
 
-Any service that exposes an MCP server becomes instantly available as a
-NEXUS tool — with zero changes to the engine, gates, notary, or ledger.
-
-Architecture:
-    External MCP Server → MCPClient → MCPToolAdapter → ToolRegistry → 4 Gates → Notary → Ledger
-    (Slack, GitHub…)     (connect)    (wraps tools)    (register)     (full)    (seal)  (audit)
-
-Usage (config/.env):
-    NEXUS_MCP_SERVERS='[
-      {"name": "slack", "transport": "stdio",
-       "command": "npx @modelcontextprotocol/server-slack",
-       "env": {"SLACK_TOKEN": "xoxb-..."}},
-      {"name": "github", "transport": "sse", "url": "http://localhost:8080"}
-    ]'
-
-At startup, MCPServerRegistry.load_all(tool_registry) discovers and registers
-all tools from each configured server. Tools appear as mcp__{server}__{tool}
-in the registry and go through the full 4-gate accountability pipeline.
+Enables connecting external MCP servers and exposing their tools
+through the NEXUS tool registry, subject to the same anomaly gates
+and persona contracts as built-in tools.
 """
 
-from nexus.mcp.client import MCPClient, MCPToolSpec
+from nexus.mcp.client import MCPClient
 from nexus.mcp.adapter import MCPToolAdapter
-from nexus.mcp.registry import MCPServerRegistry
+from nexus.mcp.known_servers import (
+    shadcn_server, nextjs_server, context7_server,
+    sequential_thinking_server, KNOWN_SERVERS,
+)
 
-__all__ = ["MCPClient", "MCPToolSpec", "MCPToolAdapter", "MCPServerRegistry"]
+__all__ = [
+    "MCPClient", "MCPToolAdapter",
+    "shadcn_server", "nextjs_server", "context7_server",
+    "sequential_thinking_server", "KNOWN_SERVERS",
+]

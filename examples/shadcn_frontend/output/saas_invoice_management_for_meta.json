@@ -1,0 +1,21 @@
+{
+  "prompt": "SaaS invoice management for freelancers",
+  "app_type": "crud",
+  "color_scheme": "blue",
+  "components": [
+    "table",
+    "dialog",
+    "button",
+    "badge",
+    "input",
+    "dropdown-menu",
+    "pagination",
+    "card"
+  ],
+  "install": "npx shadcn@latest add table dialog button badge input dropdown-menu",
+  "audit_checklist_length": 427,
+  "files": {
+    "tsx": "/Users/brandonjackson/Desktop/personal-github/nexus/examples/shadcn_frontend/output/saas_invoice_management_for.tsx",
+    "html": "/Users/brandonjackson/Desktop/personal-github/nexus/examples/shadcn_frontend/output/saas_invoice_management_for.html"
+  }
+}

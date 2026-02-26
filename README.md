@@ -1,5 +1,7 @@
 # NEXUS — Notarized AI Execution
 
+> **Not multi-agent.** One agent, multiple personas. A persona is a constrained operating mode — not a separate entity.
+
 > **The agent framework where AI actions are accountable.**
 
 Every AI action is declared, verified, and sealed in an immutable ledger before execution. If it looks wrong, it's blocked.
@@ -31,6 +33,10 @@ flowchart LR
 | Trust Graduation Tiers | ❌ | ❌ | ❌ | ✅ |
 | Multi-tenant Isolation | ❌ | ❌ | ❌ | ✅ |
 | Chain-of-Thought Capture | ❌ | ❌ | ❌ | ✅ |
+| Persistent Workflow Automation | ❌ | partial | ❌ | ✅ |
+| Encrypted Credential Vault | ❌ | ❌ | ❌ | ✅ |
+| MCP Tool Integration | ❌ | ❌ | partial | ✅ |
+| Code Sandbox (Python/JS/TypeScript) | ❌ | ❌ | ❌ | ✅ |
 | RAG + Knowledge Scoping | ✅ | ✅ | ✅ | ✅ |
 | Multi-provider LLM | ✅ | ✅ | ✅ | ✅ |
 | Tool Framework | ✅ | ✅ | ✅ | ✅ |
@@ -53,6 +59,20 @@ flowchart LR
 ```
 
 If **any** gate fails → action is **BLOCKED** and sealed as blocked in the ledger.
+
+## Single engine vs multi-agent (first principles)
+
+Research often shows that multiple specialized agents outperform a single agent on some tasks. NEXUS does **not** claim the single engine always wins on raw capability or throughput. It claims a **different tradeoff** and challenges the assumption that you need multiple agents to get specialization and safety.
+
+| Dimension | Multi-agent frameworks | NEXUS (one engine, multiple personas) |
+|-----------|------------------------|----------------------------------------|
+| **Specialization** | Separate agents, separate LLM calls | One orchestrator; personas = constrained modes (allowed tools, intent patterns, TTL, drift). Same “brain,” different contracts. |
+| **Auditability** | Scattered logs; no single chain of custody | One ledger, one notary, every action sealed. Easier to prove what happened. |
+| **Throughput** | N agents ⇒ N concurrent tasks (at scale) | One chain at a time per engine instance. Scale out by running more instances. |
+| **Workflows with multiple personas** | Natural: assign agents to steps | **Supported.** Each workflow step has a `persona_name`; the engine activates that persona for that step (scope, intent, TTL, drift). You can chain researcher → analyst → reviewer in one workflow. |
+| **Parallel processing** | Often implicit (concurrent agents) | **Supported where it matters.** DAG workflows can use **PARALLEL** steps: branches run concurrently via `asyncio.gather`, each with its own persona and full 4-gate pipeline. Sibling steps in the same DAG layer are currently run sequentially; use an explicit PARALLEL step when you want concurrency. |
+
+So: **Can the single engine “outperform” multi-agent?** On **safety, auditability, and a single chain of custody** — yes. On **raw task throughput or parallel “minds”** — no; we don’t pretend otherwise. We do support **multi-persona workflows** (different persona per step) and **parallel execution** (PARALLEL steps with multiple branches), so the single engine can still handle workflows that need several roles and concurrent work, without giving up one notarized trail.
 
 ## Quickstart
 
@@ -100,40 +120,109 @@ The dashboard streams gate results, seal cards, and CoT traces in real time as t
 
 ## Architecture
 
+### Full System Topology
+
 ```mermaid
 flowchart TB
-    subgraph API["API Layer"]
-        REST[REST Endpoints]
-        SSE[SSE Streaming]
-        JWTRL[JWT · Rate Limiter]
+    CLIENT([API Client]) --> API
+    WH([Webhook]) --> TM
+    CR([Cron · Event]) --> TM
+
+    subgraph API["API Layer (FastAPI)"]
+        V1["v1 — Agent Execution"]
+        V2["v2 — Workflow Automation"]
+        AUTH["JWT · Rate Limiter\n60 req/min · 100 chains/hr"]
+    end
+
+    TM[Trigger Manager] --> WE[DAG Executor]
+
+    subgraph ORCH["Orchestration"]
+        ENG[NexusEngine]
+        WE
+        WM[Workflow Manager]
     end
 
     subgraph COG["Cognitive Plane"]
-        KB[Knowledge Store]
+        KB["Knowledge Store (ChromaDB · RAG)"]
         CTX[Context Builder]
-        TAG[Think / Act Gate]
+        TA[Think / Act Gate]
     end
 
-    subgraph SEC["Security Plane"]
-        PM[Persona Manager]
-        AE[Anomaly Engine]
-        NO[Notary · Verifier]
+    subgraph SEC["Security Plane — every action, always"]
+        PM["Persona Manager\n(Trust Tiers)"]
+        AE["Anomaly Engine\nGate 1 Scope · Gate 2 Intent\nGate 3 TTL · Gate 4 Drift"]
+        NT["Notary · Verifier"]
     end
 
-    subgraph EXE["Execution Layer"]
+    subgraph EXEC["Execution Layer"]
         TR[Tool Registry]
-        SEL[Selector · Sandbox]
-        EX[Executor]
+        CV["Credential Vault\n(Fernet-encrypted)"]
+        MCP["MCP Client\n(stdio · sse · http)"]
+        SB["Code Sandbox\n(Python · JS · TypeScript)"]
+        HTTP["HTTP Tool\n+ Data Transform"]
     end
 
-    API --> COG
-    API --> SEC
-    COG --> EXE
-    SEC --> EXE
-    EXE --> LED[(Immutable Ledger)]
+    LED[("Merkle-Chain\nLedger")]
+
+    subgraph STORE["Persistence"]
+        PG[("PostgreSQL\nchains · personas\nworkflows · credentials")]
+        RD[("Redis\nfingerprints · rate limits\ndistributed locks")]
+    end
+
+    API --> ORCH
+    ORCH --> COG
+    ORCH --> SEC
+    COG --> CTX --> TA --> SEC
+    SEC --> PM --> AE
+    AE -->|"all 4 pass"| NT
+    AE -->|"any fail"| LED
+    NT --> EXEC
+    NT --> LED
+    EXEC --> TR
+    EXEC --> CV
+    EXEC --> MCP
+    EXEC --> SB
+    EXEC --> HTTP
+    ORCH --> STORE
+    LED --> PG
+    KB --> PG
 ```
 
-**Not multi-agent.** One agent, multiple personas. A persona is a constrained operating mode — not a separate entity.
+### Tool Ecosystem
+
+```mermaid
+flowchart LR
+    subgraph BUILTIN["Built-in Tools"]
+        WS[web_search · web_fetch]
+        FILE[file_read · file_write]
+        COMMS[send_email]
+        DATA[knowledge_search · compute_stats]
+        HTTP[http_request + data_transform\n15 pipeline operations]
+        FE[generate_frontend_design]
+    end
+
+    subgraph SANDBOX["Code Sandbox (subprocess-isolated)"]
+        PY["code_execute_python\nast import validation · venv · RLIMIT_AS"]
+        JS["code_execute_javascript\nESM/CJS · npm install"]
+        TS["code_execute_typescript\ntsx cache · process-group kill"]
+    end
+
+    subgraph MCP_TOOLS["MCP Tools (dynamic registration)"]
+        MCPN["mcp_{server}_{tool} namespace"]
+        MCPE["stdio · SSE · streamable_http\ntransports · credential injection"]
+    end
+
+    subgraph MARKET["Plugin Marketplace (community)"]
+        PKG["nexus-plugin-{name} on PyPI\n@nexus_plugin_tool decorated\nSHA-256 tamper-verified"]
+    end
+
+    TR[Tool Registry] --> BUILTIN
+    TR --> SANDBOX
+    TR --> MCP_TOOLS
+    TR --> MARKET
+```
+
+Same model throughout: one agent, multiple personas (see top of README). Workflows can use **multiple personas** (per-step `persona_name`) and **parallel branches** (PARALLEL step type).
 
 ## Key Concepts
 
@@ -179,23 +268,30 @@ Personas accumulate trust through consistent behavior:
 
 ```
 nexus/
-├── core/           # Security plane: personas, anomaly, notary, ledger, engine
+├── core/           # Security plane: personas, anomaly, notary, ledger, engine (DAG executor)
 ├── knowledge/      # Cognitive plane: embeddings, vector store, context
 ├── reasoning/      # Decision gates: think/act, continue/complete, escalate
-├── tools/          # Execution: registry, sandbox, executor, built-ins
-├── db/             # Persistence: models, repository, migrations
-├── llm/            # LLM integration via litellm + cost tracking
+├── tools/          # Execution: registry, sandbox v2 (Py/JS/TS), executor, built-ins
+│   └── builtin/    # web, file, comms, data, http_request, data_transform, frontend_design
+├── workflows/      # DAG definition: dag.py, validator.py, manager.py (v2)
+├── workers/        # ARQ background workers: queue.py (tasks), dispatcher.py (inline/bg routing)
+├── credentials/    # Credential vault: encryption.py (Fernet), vault.py (v2)
+├── mcp/            # MCP client + tool adapter + credential injection (v2)
+├── triggers/       # Trigger system: webhook, cron, event bus, workflow-complete chaining (v2)
+├── db/             # ORM models (v1 + v2), repository, Alembic migrations
+├── llm/            # litellm integration + cost tracking + multi-provider routing
 ├── cache/          # Redis: fingerprint store, rate limiting, distributed locks
 ├── auth/           # JWT, middleware, rate limiter
-├── api/            # FastAPI routes and schemas
+├── api/            # FastAPI v1 routes + schemas
+├── marketplace/    # Plugin Marketplace: SDK (PluginManifest, @nexus_plugin_tool), registry, validator, scaffolder
 ├── cli/            # Typer CLI commands + project templates
 ├── callbacks/      # NexusCallback protocol + LoggingCallback
 ├── config/         # NexusConfig (BaseSettings) + YAML loaders
-frontend/           # React dashboard (Vite, port 5173) — 17 source files
-examples/           # quickstart, custom_tool, local_llm, customer_support, code_review
+frontend/           # React dashboard (Vite, port 5173) — 57+ source files
+examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (590 tests)
+tests/              # pytest suite (1959 tests — phases 0-30; + 5 slow Ollama tests)
 ```
 
 ## CLI
@@ -218,6 +314,16 @@ nexus gates [--stats]     # Show gate thresholds + per-gate pass/fail counts
 # Introspection
 nexus config              # Resolved config with env var names (secrets masked)
 nexus tools               # Registered tools with risk levels
+
+# Plugin Marketplace
+nexus plugin install weather                      # Install from PyPI
+nexus plugin install nexus-plugin-github==2.0.0  # Specific version
+nexus plugin uninstall weather                    # Remove plugin + tools
+nexus plugin list                                 # Installed plugins + tool counts
+nexus plugin search slack                         # Search PyPI for nexus-plugin-* packages
+nexus plugin upgrade weather                      # Upgrade to latest (or --version)
+nexus plugin new my-tool                          # Scaffold a new plugin package
+nexus plugin verify [plugin-name]                 # SHA-256 tamper detection (all or one)
 ```
 
 ## API
@@ -236,6 +342,35 @@ nexus tools               # Registered tools with risk levels
 | POST | /v1/knowledge/ingest | Upload documents to vector store |
 | GET | /v1/knowledge/query | Semantic search |
 | GET | /v1/health | Health check with service probes |
+| GET | /v2/workflows | List workflows |
+| POST | /v2/workflows | Create workflow |
+| GET | /v2/workflows/{id} | Get workflow detail |
+| PUT | /v2/workflows/{id} | Update workflow definition |
+| POST | /v2/workflows/{id}/activate | Activate a workflow |
+| POST | /v2/workflows/{id}/pause | Pause an active workflow |
+| GET | /v2/workflows/{id}/versions | Version history |
+| POST | /v2/workflows/{id}/rollback/{version} | Roll back to a previous version |
+| POST | /v2/workflows/{id}/refine | Refine workflow definition via LLM feedback |
+| POST | /v2/workflows/{id}/explain | Plain-English explanation of a workflow |
+| POST | /v2/workflows/{id}/run | Dispatch a manual workflow run (inline or background) |
+| GET | /v2/executions | List executions |
+| GET | /v2/executions/{id} | Execution detail with seal data |
+| DELETE | /v2/executions/{id} | Delete a non-running execution |
+| GET | /v2/executions/{id}/stream | SSE stream — replay seals then live events |
+| GET | /v2/triggers | List triggers |
+| POST | /v2/triggers | Create trigger (webhook / cron / event / manual) |
+| GET | /v2/triggers/{id} | Get trigger |
+| PUT | /v2/triggers/{id} | Update trigger (enable/disable) |
+| POST | /v2/triggers/{id}/enable | Enable trigger |
+| POST | /v2/triggers/{id}/disable | Disable trigger |
+| DELETE | /v2/triggers/{id} | Delete trigger |
+| GET/POST/… | /v2/webhooks/{path} | Catch-all webhook receiver (no JWT required) |
+| GET | /v2/marketplace/search | Search plugin marketplace |
+| GET | /v2/marketplace/installed | List installed plugins |
+| POST | /v2/marketplace/install | Install a plugin from PyPI |
+| DELETE | /v2/marketplace/{name} | Uninstall a plugin |
+| GET | /v2/jobs/{job_id} | Poll background job status |
+| GET | /v2/jobs/{job_id}/result | Get background job result |
 
 Interactive API docs: `http://localhost:8000/docs`
 
@@ -246,7 +381,7 @@ NEXUS is designed for production agentic workloads. Security hardening applied a
 **Authentication & Authorization**
 - JWT HS256 with minimum 32-byte key enforcement (RFC 7518 §3.2)
 - API keys hashed with SHA-256 before storage — plaintext never persisted
-- All routes tenant-scoped; cross-tenant access returns 403, not 404
+- All queries scoped to `tenant_id` at the ORM level — another tenant's data is never returned; requests for another tenant's chain return 404 (existence not confirmed), collection endpoints return empty lists
 - Demo fallback (`nxs_demo_key_12345`) disabled when `NEXUS_ENV=production`
 
 **Prompt Injection Defense**
@@ -261,8 +396,8 @@ NEXUS is designed for production agentic workloads. Security hardening applied a
 - Redis keys namespaced and sanitized — persona IDs stripped of non-alphanumeric chars
 
 **Infrastructure**
-- Redis pinned to `7.4-alpine` (CVE-2025-49844 / "RediShell" CVSS 10.0 mitigated); port not exposed externally
-- LLM calls wrapped in 30-second timeout — runaway generation blocked
+- Redis pinned to `7.4-alpine` (mitigates CVE-2025-49844 Lua RCE present in unversioned `7-alpine`); port not exposed externally
+- LLM calls: 30s timeout for cloud providers; 120s for local Ollama models (accounts for model-swap latency); `num_ctx=8192` prevents silent prompt truncation — runaway generation blocked
 - In-memory ledger capped at 10,000 seals — OOM via audit trail eliminated
 
 **HTTP Hardening**
@@ -270,6 +405,14 @@ NEXUS is designed for production agentic workloads. Security hardening applied a
 - CORS: explicit method list (`GET POST PUT DELETE`), not `*`
 - Error responses return generic messages — no stack traces or internal details exposed
 - JWT stored in `sessionStorage` (not `localStorage`) — cleared on tab close, not persisted to disk
+
+**Plugin Supply Chain Security**
+- Static pre-import scan rejects `os.system()`, `subprocess`, `eval()`, `exec()`, raw sockets, and HTTP calls at import time (CVE-2025-14009)
+- SHA-256 checksum fingerprinting at install; `nexus plugin verify` detects post-install file tampering (Ultralytics incident pattern)
+- Levenshtein edit-distance warning on package names ≤2 chars from any installed plugin (typosquatting defence, MUT-8694)
+- `pip install --dry-run` before actual install flags dependency hijacking (CVE-2025-27607)
+- 50,000-char cap on all string parameters passed to plugin tools (prompt injection guard)
+- `setuptools>=78.1.1` enforced at build and runtime (CVE-2025-47273 path traversal + CVE-2024-6345 RCE)
 
 **Rate Limiting**
 - 60 requests/minute per tenant (API)
@@ -287,6 +430,88 @@ NEXUS_REDIS_URL=redis://localhost:6379/0
 NEXUS_DEFAULT_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 NEXUS_ENV=production                        # Disables demo key fallback
 ```
+
+**v2 additions — set before using workflow, credential, or MCP features (Phase 15+):**
+
+```bash
+# Credential vault
+NEXUS_CREDENTIAL_ENCRYPTION_KEY=<fernet-key>    # Fernet key required in Phase 18+ (cryptography.fernet.Fernet.generate_key())
+
+# Triggers
+NEXUS_WEBHOOK_BASE_URL=https://yourdomain.com   # Public base URL registered with incoming webhook URLs
+NEXUS_CRON_CHECK_INTERVAL=15                    # Seconds between cron schedule evaluations
+
+# Background execution
+NEXUS_TASK_QUEUE_URL=redis://localhost:6379/1   # Separate Redis DB from the fingerprint cache (/0)
+NEXUS_WORKER_CONCURRENCY=4                      # Parallel background workflow workers
+
+# Code sandbox
+NEXUS_SANDBOX_MAX_MEMORY_MB=256
+NEXUS_SANDBOX_MAX_EXECUTION_SECONDS=30
+
+# MCP
+NEXUS_MCP_CONNECTION_TIMEOUT=10                 # Seconds before MCP server connection attempt fails
+NEXUS_MCP_TOOL_TIMEOUT=60                       # Per-tool execution timeout
+```
+
+## v2 Roadmap — AI Automation Platform
+
+NEXUS v2 transforms the single-shot agent framework into a **persistent, trigger-driven automation platform** — every workflow step still passes through all 4 anomaly gates and is sealed in the ledger.
+
+### v2 DAG Execution Flow
+
+```mermaid
+flowchart LR
+    TR([Trigger\ncron · webhook · manual]) --> WE["Workflow Engine\n(load + verify active)"]
+    WE --> EP["Entry Steps\n(no incoming edges)"]
+
+    subgraph PIPELINE["Per-Step Pipeline — all 4 gates applied to every DAG step"]
+        CTX2[Build Context] --> TA2[Think/Act Gate]
+        TA2 --> DECL[Declare Intent]
+        DECL --> PA[Activate Persona]
+        PA --> AE2{"Anomaly Engine\nGates 1–4"}
+        AE2 -->|"any fail"| BLK([Block + Seal])
+        AE2 -->|"all pass"| NT2[Notarize]
+        NT2 --> EX2[Execute Tool]
+        EX2 --> VL[Validate Output]
+        VL --> LED2[(Ledger)]
+    end
+
+    EP --> PIPELINE
+    LED2 --> NX["Resolve Next\n(edges + conditions)"]
+    NX -->|"sequential"| EP
+    NX -->|"parallel"| PAR["asyncio.gather\n(concurrent steps)"]
+    PAR --> EP
+    NX -->|"complete"| DONE([Workflow Complete])
+```
+
+**The key invariant:** no step in any workflow — regardless of complexity — can bypass the 4-gate security pipeline.
+
+### Phase Status
+
+| Phase | Feature | Status |
+|-------|---------|--------|
+| 15 | Foundation v2 — exception hierarchy, config fields, ORM models | ✅ Done |
+| 16 | Workflow DAG Definition — step types, branching, loops, versioning | ✅ Done |
+| 17 | DAG Execution Engine — parallel steps, branch, loop, sub-workflow, approval | ✅ Done |
+| 18 | Credential Vault — Fernet-encrypted secrets, OAuth2, runtime injection | ✅ Done |
+| 19 | MCP Integration — Model Context Protocol client + tool adapter + credential injection | ✅ Done |
+| 20 | Universal HTTP Tool + Data Transform — REST caller (auth/pagination/retry/JMESPath) + 15-op pipeline | ✅ Done |
+| 21 | Code Sandbox v2 — Python/JS/TypeScript subprocess isolation, tsx cache, process-group kill | ✅ Done |
+| 22 | Trigger System — webhooks, cron scheduler, event bus, workflow-complete chaining | ✅ Done |
+| 23 | NL Workflow Generation — natural language → DAG via LLM, iterative refinement, explain | ✅ Done |
+| 23.1 | Ambiguity Resolution — multi-round clarification sessions, specificity scoring, plan sealing | ✅ Done |
+| 24 | Visual Canvas — React Flow drag-and-drop workflow editor | ✅ Done |
+| 25 | Frontend v2 + Skills System — Skills CRUD + versioning, Credentials vault UI (/peek, no secrets), MCP Servers, Executions + ChainReplay, GateBar/GateChip, React Query, Zustand, SSE event stream | ✅ Done |
+| 26 | Background Execution — ARQ task queue, `WorkflowDispatcher` (inline/background routing, 5-step threshold), `POST /v2/workflows/{id}/run`, `GET /v2/jobs/{job_id}`, `TriggerManager.set_dispatcher()` | ✅ Done |
+| 27 | Plugin Marketplace — `nexus-plugin-*` PyPI ecosystem, `PluginManifest` + `@nexus_plugin_tool` SDK, `PluginRegistry` (install/upgrade/verify), 15-threat CVE security model, `nexus plugin` CLI (7 sub-commands) | ✅ Done |
+| 28 | Persistence v2 — Alembic migrations (async), 15 new repository methods (workflow/credential/MCP CRUD), seed v2 data, `CredentialModel.is_active`, `MCPServerModel.url` nullable | ✅ Done |
+| 29 | API v2 Complete — triggers CRUD, webhook catch-all (no JWT), marketplace endpoints, workflow lifecycle (activate/pause/versions/rollback/refine/explain), execution SSE stream + delete, job result, MCP refresh | ✅ Done |
+| 30 | Test suite v2 — 113 fast tests across 8 new files (workflows, dag_engine, credentials, mcp, triggers, http_tool, code_sandbox, api_v2) + 5 Ollama live-LLM tests; bugs fixed in `generator.py` (._validator), Ollama client (num_ctx=8192, 120s timeout) | ✅ Done |
+| 31 | Infrastructure v2 — nexus-scheduler singleton (Redis distributed lock + heartbeat), nginx reverse proxy (prod profile), chroma service, API healthcheck gating worker/scheduler startup, `frontend/nginx.conf` v2 proxy, dev hot-reload overrides, Makefile targets (`infra`/`worker`/`scheduler`/`prod`/`scale-workers`/`test-fast`/`logs-*`/`fmt`), `.env.example` v2 vars | ✅ Done |
+| 32 | Examples & Docs v2 — Slack→Sheets, email classifier, scheduled report, MCP GitHub examples | 🔲 Planned |
+
+See [NEXUS_WORKFLOW_SPEC.md](NEXUS_WORKFLOW_SPEC.md) for the full v2 build specification.
 
 ## Contributing
 

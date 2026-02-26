@@ -11,7 +11,7 @@ console = Console()
 
 async def _seed() -> None:
     from nexus.db.database import init_db, async_session
-    from nexus.db.seed import seed_database
+    from nexus.db.seed import run_seed
     from nexus.db.repository import Repository
 
     with console.status("[dim]Connecting to database...[/dim]"):
@@ -21,7 +21,7 @@ async def _seed() -> None:
         repo = Repository(session)
 
         with console.status("[dim]Seeding...[/dim]"):
-            await seed_database(session)
+            await run_seed(session)
 
         # Verify what's in the DB now
         tenant = await repo.get_tenant("demo")
