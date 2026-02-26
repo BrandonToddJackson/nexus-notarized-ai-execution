@@ -660,7 +660,7 @@ class TestSealFullRoundTrip:
             gates=gates,
             overall_verdict=GateVerdict.PASS,
             risk_level=RiskLevel.LOW,
-            persona_id="researcher",
+            persona_uuid="researcher",
             action_fingerprint="fp-roundtrip-001",
         )
         seal = Seal(

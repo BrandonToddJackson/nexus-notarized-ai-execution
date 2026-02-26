@@ -63,7 +63,10 @@ async def _execute_single(
     """Execute a single HTTP request with streaming size limit enforcement."""
     start = time.monotonic()
     async with httpx.AsyncClient(**client_kwargs) as client:
-        async with client.stream(method.upper(), url, params=query_params, **request_kwargs) as response:
+        # Only pass params when non-empty — httpx strips existing URL query
+        # params when params={} is passed explicitly (e.g. link_header next URLs)
+        extra = {"params": query_params} if query_params else {}
+        async with client.stream(method.upper(), url, **extra, **request_kwargs) as response:
             content = b""
             async for chunk in response.aiter_bytes(8192):
                 content += chunk

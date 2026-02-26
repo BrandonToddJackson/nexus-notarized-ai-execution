@@ -127,22 +127,22 @@ class TestFileRead:
     async def test_result_is_nonempty_and_contains_path(self):
         """Result must be non-empty and embed the requested path."""
         _, fn = get_registered_tools()["file_read"]
-        result = await fn(path="/tmp/test.txt")
+        result = await fn(path="/tmp/nexus/test.txt")
         assert len(result) > 0
         assert "test.txt" in result or "/tmp" in result
 
     @pytest.mark.asyncio
     async def test_result_contains_path(self):
         _, fn = get_registered_tools()["file_read"]
-        result = await fn(path="/tmp/my_document.txt")
+        result = await fn(path="/tmp/nexus/my_document.txt")
         assert "my_document.txt" in result or "/tmp" in result
 
     @pytest.mark.asyncio
     async def test_different_paths_produce_different_output(self):
         """Each path call produces distinct output (path is embedded)."""
         from nexus.tools.builtin.files import file_read
-        r1 = await file_read(path="/data/alpha.txt")
-        r2 = await file_read(path="/data/beta.txt")
+        r1 = await file_read(path="/tmp/nexus/alpha.txt")
+        r2 = await file_read(path="/tmp/nexus/beta.txt")
         assert r1 != r2, "Different paths must produce different output"
 
     def test_has_nexus_tool_attribute(self):
@@ -164,14 +164,14 @@ class TestFileWrite:
     async def test_result_is_nonempty_and_references_path(self):
         """Confirmation must be non-empty and reference the target path."""
         _, fn = get_registered_tools()["file_write"]
-        result = await fn(path="/tmp/out.txt", content="hello world")
+        result = await fn(path="/tmp/nexus/out.txt", content="hello world")
         assert len(result) > 0
         assert "out.txt" in result or "/tmp" in result or "11" in result
 
     @pytest.mark.asyncio
     async def test_result_reflects_content_length(self):
         _, fn = get_registered_tools()["file_write"]
-        result = await fn(path="/tmp/out.txt", content="hello")
+        result = await fn(path="/tmp/nexus/out.txt", content="hello")
         # "5" = len("hello") must appear somewhere in the confirmation
         assert "5" in result or "hello" in result or "/tmp" in result
 
@@ -179,8 +179,8 @@ class TestFileWrite:
     async def test_different_paths_produce_different_confirmations(self):
         """Writing to different paths gives different confirmation messages."""
         from nexus.tools.builtin.files import file_write
-        r1 = await file_write(path="/a/foo.txt", content="x")
-        r2 = await file_write(path="/b/bar.txt", content="x")
+        r1 = await file_write(path="/tmp/nexus/foo.txt", content="x")
+        r2 = await file_write(path="/tmp/nexus/bar.txt", content="x")
         assert r1 != r2, "Different paths must produce different confirmations"
 
     def test_parameters_include_path_and_content(self):

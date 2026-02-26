@@ -230,7 +230,7 @@ class TestLedgerEndpoint:
         gate = GateResult(gate_name="scope", verdict=GateVerdict.PASS, score=1.0, threshold=1.0, details="")
         anomaly = AnomalyResult(
             gates=[gate, gate, gate, gate], overall_verdict=GateVerdict.PASS,
-            risk_level=RiskLevel.LOW, persona_id="researcher", action_fingerprint="fp",
+            risk_level=RiskLevel.LOW, persona_uuid="researcher", action_fingerprint="fp",
         )
         seal = Seal(
             chain_id="my-chain-001", step_index=0, tenant_id="demo",
