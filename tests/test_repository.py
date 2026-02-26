@@ -53,7 +53,7 @@ def _make_anomaly(persona_id: str) -> AnomalyResult:
         gates=[_make_gate(n) for n in ("scope", "intent", "ttl", "drift")],
         overall_verdict=GateVerdict.PASS,
         risk_level=RiskLevel.LOW,
-        persona_id=persona_id,
+        persona_uuid=persona_id,
         action_fingerprint="abc123",
     )
 

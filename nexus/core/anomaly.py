@@ -100,7 +100,7 @@ class AnomalyEngine:
             gates=gates,
             overall_verdict=overall,
             risk_level=risk_level,
-            persona_id=persona.id,
+            persona_uuid=persona.id,
             action_fingerprint=fingerprint,
         )
 

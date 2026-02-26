@@ -33,6 +33,9 @@ class Notary:
         intent: IntentDeclaration,
         anomaly_result: AnomalyResult,
     ) -> Seal:
+        # persona_id here is the persona NAME (e.g. "researcher"), used for
+        # deterministic Merkle fingerprinting. For the persona UUID, see
+        # seal.anomaly_result.persona_uuid.
         """Create a new seal in PENDING status.
 
         Fingerprint = SHA256(previous_fingerprint + seal_content_hash).

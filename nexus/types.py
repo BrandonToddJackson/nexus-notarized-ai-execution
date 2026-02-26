@@ -72,7 +72,7 @@ class AnomalyResult(BaseModel):
     gates: list[GateResult]             # exactly 4 entries
     overall_verdict: GateVerdict        # FAIL if ANY gate fails
     risk_level: RiskLevel
-    persona_id: str
+    persona_uuid: str                   # UUID of the PersonaContract instance (not the name)
     action_fingerprint: str             # hash of the action for drift comparison
 
 class IntentDeclaration(BaseModel):

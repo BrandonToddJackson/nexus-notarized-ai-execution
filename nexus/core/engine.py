@@ -510,6 +510,100 @@ class NexusEngine:
 
         return chain
 
+    async def execute_intent(
+        self,
+        intent: "IntentDeclaration",
+        tenant_id: str,
+        persona_name: str,
+    ) -> "Seal":
+        """Execute a pre-formed intent through the full accountability pipeline.
+
+        Bypasses LLM decomposition (use when tool params are already known and
+        cannot be expressed as a natural language task). All 4 accountability
+        gates, notary sealing, and ledger recording still apply — full
+        accountability is preserved.
+
+        Args:
+            intent: Pre-formed IntentDeclaration (tool_name and tool_params are set)
+            tenant_id: Tenant context
+            persona_name: Persona to activate for this action
+
+        Returns:
+            Finalized Seal with EXECUTED or FAILED status
+
+        Raises:
+            AnomalyDetected: If any gate fails
+        """
+        chain_id = f"direct-{tenant_id}"
+        step_index = 0
+        activation_done = False
+
+        try:
+            # ── Activate persona (starts TTL clock) ─────────────────────────
+            activated_persona = self.persona_manager.activate(persona_name, tenant_id)
+            activation_done = True
+            activation_time = (
+                self.persona_manager.get_activation_time(persona_name)
+                or datetime.now(timezone.utc)
+            )
+
+            # ── Run all 4 anomaly gates ──────────────────────────────────────
+            anomaly_result = await self.anomaly_engine.check(
+                persona=activated_persona,
+                intent=intent,
+                activation_time=activation_time,
+                tenant_id=tenant_id,
+            )
+
+            # ── Create PENDING seal ─────────────────────────────────────────
+            seal = self.notary.create_seal(
+                chain_id=chain_id,
+                step_index=step_index,
+                tenant_id=tenant_id,
+                persona_id=persona_name,
+                intent=intent,
+                anomaly_result=anomaly_result,
+            )
+
+            # ── Block if any gate failed ────────────────────────────────────
+            if anomaly_result.overall_verdict == GateVerdict.FAIL:
+                failed = [g.details for g in anomaly_result.gates if g.verdict == GateVerdict.FAIL]
+                reason = f"Anomaly gates failed: {failed}"
+                seal = self.notary.finalize_seal(seal, None, ActionStatus.BLOCKED, error=reason)
+                await self.ledger.append(seal)
+                self.persona_manager.revoke(persona_name)
+                raise AnomalyDetected(
+                    f"execute_intent blocked: {reason}",
+                    gate_results=anomaly_result.gates,
+                    chain_id=chain_id,
+                )
+
+            # ── Execute the tool ────────────────────────────────────────────
+            result, error_str = await self.tool_executor.execute(intent)
+
+            # ── Finalize seal ────────────────────────────────────────────────
+            status = ActionStatus.EXECUTED if not error_str else ActionStatus.FAILED
+            seal = self.notary.finalize_seal(seal, result, status, error=error_str)
+            await self.ledger.append(seal)
+
+            self.persona_manager.revoke(persona_name)
+            return seal
+
+        except AnomalyDetected:
+            if activation_done:
+                try:
+                    self.persona_manager.revoke(persona_name)
+                except Exception:
+                    pass
+            raise
+        except Exception:
+            if activation_done:
+                try:
+                    self.persona_manager.revoke(persona_name)
+                except Exception:
+                    pass
+            raise
+
     async def _decompose_task(self, task: str, tenant_id: str) -> list[dict]:
         """Ask LLM to break task into steps.
 

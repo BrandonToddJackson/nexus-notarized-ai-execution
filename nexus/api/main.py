@@ -93,6 +93,12 @@ async def lifespan(app: FastAPI):
         tool_registry.register(definition, impl)
     app.state.tool_registry = tool_registry
 
+    # 8b. MCP servers — register tools from any configured MCP servers
+    from nexus.mcp import MCPServerRegistry, MCPToolAdapter
+    mcp_registry = MCPServerRegistry(config, MCPToolAdapter())
+    await mcp_registry.load_all(tool_registry)
+    app.state.mcp_registry = mcp_registry
+
     # 9. Build all remaining components
     from nexus.core.anomaly import AnomalyEngine
     from nexus.core.notary import Notary
@@ -159,6 +165,7 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown ──
     logger.info("NEXUS shutting down...")
+    await mcp_registry.shutdown()
     await redis_client.close()
 
 

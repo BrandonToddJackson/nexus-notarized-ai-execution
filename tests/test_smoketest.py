@@ -211,7 +211,7 @@ class TestPhase1Notary:
             gates=[gate, gate, gate, gate],
             overall_verdict=GateVerdict.PASS,
             risk_level=RiskLevel.LOW,
-            persona_id="researcher",
+            persona_uuid="researcher",
             action_fingerprint="fp123",
         )
 
@@ -312,7 +312,7 @@ class TestPhase1Ledger:
             gates=[gate, gate, gate, gate],
             overall_verdict=GateVerdict.PASS,
             risk_level=RiskLevel.LOW,
-            persona_id="researcher",
+            persona_uuid="researcher",
             action_fingerprint="fp",
         )
         return Seal(
@@ -608,7 +608,7 @@ class TestPhase2ContinueCompleteGate:
             gates=[gate, gate, gate, gate],
             overall_verdict=GateVerdict.PASS,
             risk_level=RiskLevel.LOW,
-            persona_id="researcher",
+            persona_uuid="researcher",
             action_fingerprint="fp",
         )
         s = ActionStatus(status)
@@ -1103,7 +1103,7 @@ class TestPhase5Repository:
             gates=[gate, gate, gate, gate],
             overall_verdict=GateVerdict.PASS,
             risk_level=RiskLevel.LOW,
-            persona_id="researcher",
+            persona_uuid="researcher",
             action_fingerprint="fp",
         )
         seal = Seal(

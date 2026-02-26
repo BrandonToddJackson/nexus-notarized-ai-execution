@@ -5,11 +5,23 @@ YAML loaders: load_personas_yaml(), load_tools_yaml()
 """
 
 import warnings
+import json
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, Literal
 
 from nexus.config.loader import load_personas_yaml, load_tools_yaml
 from nexus.config.schema import PersonaYAML, ToolYAML, PersonasConfig, ToolsConfig
+
+
+class MCPServerConfig(BaseModel):
+    """Configuration for a single MCP server connection."""
+    name: str
+    transport: Literal["stdio", "sse", "streamable_http"] = "stdio"
+    command: Optional[str] = None   # for stdio transport
+    url: Optional[str] = None       # for sse/streamable_http transport
+    env: dict[str, str] = {}
+    timeout_seconds: int = 30
 
 
 class NexusConfig(BaseSettings):
@@ -61,6 +73,11 @@ class NexusConfig(BaseSettings):
     port: int = 8000
     cors_origins: list[str] = ["http://localhost:5173"]  # Vite dev server
 
+    # ── MCP Servers ──
+    # JSON array of MCPServerConfig objects.
+    # Set via NEXUS_MCP_SERVERS='[{"name":"slack","transport":"stdio","command":"npx ..."}]'
+    mcp_servers: list[MCPServerConfig] = []
+
     model_config = {"env_prefix": "NEXUS_", "env_file": ".env", "extra": "ignore"}
 
 
@@ -77,6 +94,7 @@ elif len(config.secret_key.encode()) < 32:
 
 __all__ = [
     "NexusConfig",
+    "MCPServerConfig",
     "config",
     "load_personas_yaml",
     "load_tools_yaml",
