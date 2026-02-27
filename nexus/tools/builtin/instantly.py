@@ -224,24 +224,64 @@ async def instantly_create_campaign(**kwargs) -> dict:
     calling POST /campaigns. Idempotent: returns existing campaign if name matches.
 
     Required: name, subject, body
-    Optional: follow_up_subject, follow_up_body, follow_up_delay_days (default 3),
-              daily_limit (default 30), timezone (default America/Chicago)
+
+    Sequence options (choose one):
+      Option A — simple shorthand (up to 2 steps):
+        subject, body                          — step 1 (delay 0)
+        follow_up_subject, follow_up_body      — step 2 (optional)
+        follow_up_delay_days                   — days before step 2 (default 3)
+
+      Option B — full sequence list (unlimited steps):
+        sequence: [
+          {"subject": "...", "body": "...", "delay_days": 0},
+          {"subject": "...", "body": "...", "delay_days": 3},
+          {"subject": "...", "body": "...", "delay_days": 7},
+        ]
+        When sequence is provided, subject/body/follow_up_* are ignored.
+
+    Optional: daily_limit (default 30), timezone (default America/Chicago)
     """
     name = kwargs.get("name") or ""
-    subject = kwargs.get("subject") or ""
-    body = kwargs.get("body") or ""
     if not name:
         raise ToolError("name is required")
-    if not subject:
-        raise ToolError("subject is required")
-    if not body:
-        raise ToolError("body is required")
 
-    follow_up_subject = kwargs.get("follow_up_subject") or ""
-    follow_up_body = kwargs.get("follow_up_body") or ""
-    follow_up_delay = int(kwargs.get("follow_up_delay_days") or 3)
     daily_limit = int(kwargs.get("daily_limit") or 30)
     timezone = kwargs.get("timezone") or "America/Chicago"
+
+    # Build sequence steps — Option B (sequence list) takes priority
+    sequence_input = kwargs.get("sequence") or []
+    if sequence_input:
+        if not isinstance(sequence_input, list) or not sequence_input:
+            raise ToolError("sequence must be a non-empty list of {subject, body, delay_days} objects")
+        steps = []
+        for i, step in enumerate(sequence_input):
+            subj = step.get("subject") or ""
+            bd = step.get("body") or ""
+            if not subj or not bd:
+                raise ToolError(f"sequence[{i}] is missing subject or body")
+            steps.append({
+                "type": "email",
+                "delay": int(step.get("delay_days") or 0),
+                "variants": [{"subject": subj, "body": bd}],
+            })
+    else:
+        # Option A — simple shorthand
+        subject = kwargs.get("subject") or ""
+        body = kwargs.get("body") or ""
+        if not subject:
+            raise ToolError("subject is required (or provide a sequence list)")
+        if not body:
+            raise ToolError("body is required (or provide a sequence list)")
+        follow_up_subject = kwargs.get("follow_up_subject") or ""
+        follow_up_body = kwargs.get("follow_up_body") or ""
+        follow_up_delay = int(kwargs.get("follow_up_delay_days") or 3)
+        steps = [{"type": "email", "delay": 0, "variants": [{"subject": subject, "body": body}]}]
+        if follow_up_subject and follow_up_body:
+            steps.append({
+                "type": "email",
+                "delay": follow_up_delay,
+                "variants": [{"subject": follow_up_subject, "body": follow_up_body}],
+            })
 
     from datetime import date
 
@@ -283,15 +323,6 @@ async def instantly_create_campaign(**kwargs) -> dict:
                 "No warmed sender accounts found. "
                 "Add and warm senders in Instantly before creating a campaign."
             )
-
-        # Build sequence steps
-        steps = [{"type": "email", "delay": 0, "variants": [{"subject": subject, "body": body}]}]
-        if follow_up_subject and follow_up_body:
-            steps.append({
-                "type": "email",
-                "delay": follow_up_delay,
-                "variants": [{"subject": follow_up_subject, "body": follow_up_body}],
-            })
 
         today = date.today().isoformat()
         payload = {
@@ -626,11 +657,24 @@ _registered_tools["instantly_create_campaign"] = (
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Campaign name"},
-                "subject": {"type": "string", "description": "Email subject line for step 1"},
+                "subject": {"type": "string", "description": "Email subject for step 1 (use when sequence not provided)"},
                 "body": {"type": "string", "description": "Email body for step 1 (plain text, supports {{first_name}} etc.)"},
-                "follow_up_subject": {"type": "string", "description": "Subject line for follow-up email (optional)"},
-                "follow_up_body": {"type": "string", "description": "Body for follow-up email (optional)"},
-                "follow_up_delay_days": {"type": "integer", "description": "Days to wait before follow-up (default 3)"},
+                "follow_up_subject": {"type": "string", "description": "Subject for follow-up step 2 (optional shorthand)"},
+                "follow_up_body": {"type": "string", "description": "Body for follow-up step 2 (optional shorthand)"},
+                "follow_up_delay_days": {"type": "integer", "description": "Days before follow-up sends (default 3)"},
+                "sequence": {
+                    "type": "array",
+                    "description": "Full sequence list — use instead of subject/body for 3+ steps. Each item: {subject, body, delay_days}",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "subject": {"type": "string"},
+                            "body": {"type": "string"},
+                            "delay_days": {"type": "integer", "description": "Days after previous step (0 for first)"},
+                        },
+                        "required": ["subject", "body"],
+                    },
+                },
                 "daily_limit": {"type": "integer", "description": "Max emails per day (default 30)"},
                 "timezone": {"type": "string", "description": "Schedule timezone (default America/Chicago)"},
             },
