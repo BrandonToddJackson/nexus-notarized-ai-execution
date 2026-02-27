@@ -170,11 +170,11 @@ class TestWorkflowCRUD:
         assert resp.status_code == 422
 
     def test_list_templates(self):
-        # Note: GET /v2/workflows/templates is shadowed by
-        # GET /v2/workflows/{workflow_id} due to route ordering.
-        # FastAPI matches "templates" as a workflow_id, returning 404.
+        # GET /v2/workflows/templates is registered before the parameterized
+        # /{workflow_id} route, so it returns the templates list (200).
         resp = self.client.get("/v2/workflows/templates")
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        assert "templates" in resp.json()
 
 
 # ── Trigger CRUD ──────────────────────────────────────────────────────────────

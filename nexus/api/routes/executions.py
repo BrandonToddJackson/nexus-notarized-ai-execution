@@ -80,7 +80,7 @@ async def get_execution(
 
     chain = None
     if hasattr(ledger, "get_chain"):
-        chain = ledger.get_chain(execution_id)
+        chain = await ledger.get_chain(execution_id)
     if chain is None:
         raise HTTPException(status_code=404, detail="Execution not found")
 
@@ -116,7 +116,7 @@ async def retry_execution(
 
     chain = None
     if hasattr(ledger, "get_chain"):
-        chain = ledger.get_chain(execution_id)
+        chain = await ledger.get_chain(execution_id)
     if chain is None:
         raise HTTPException(status_code=404, detail="Execution not found")
 
@@ -176,7 +176,7 @@ async def delete_execution(
 
     chain = None
     if hasattr(ledger, "get_chain"):
-        chain = ledger.get_chain(execution_id)
+        chain = await ledger.get_chain(execution_id)
     if chain is None:
         raise HTTPException(status_code=404, detail="Execution not found")
 
@@ -210,7 +210,7 @@ async def stream_execution(
 
         # Check if execution is already complete
         if ledger is not None and hasattr(ledger, "get_chain"):
-            chain = ledger.get_chain(execution_id)
+            chain = await ledger.get_chain(execution_id)
             if chain is not None:
                 chain_status = str(getattr(chain, "status", ""))
                 if chain_status not in ("running", "pending"):

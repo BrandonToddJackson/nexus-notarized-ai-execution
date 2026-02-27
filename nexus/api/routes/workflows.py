@@ -340,6 +340,12 @@ async def create_workflow(
     return workflow.model_dump()
 
 
+@router.get("/v2/workflows/templates")
+async def list_templates(request: Request):
+    """Return static list of workflow templates."""
+    return {"templates": _TEMPLATES}
+
+
 @router.get("/v2/workflows/{workflow_id}")
 async def get_workflow(
     workflow_id: str,
@@ -470,12 +476,6 @@ _TEMPLATES = [
         "tags": ["template", "approval"],
     },
 ]
-
-
-@router.get("/v2/workflows/templates")
-async def list_templates(request: Request):
-    """Return static list of workflow templates."""
-    return {"templates": _TEMPLATES}
 
 
 @router.post("/v2/workflows/from-template/{template_id}", status_code=201)

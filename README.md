@@ -287,11 +287,11 @@ nexus/
 ├── cli/            # Typer CLI commands + project templates
 ├── callbacks/      # NexusCallback protocol + LoggingCallback
 ├── config/         # NexusConfig (BaseSettings) + YAML loaders
-frontend/           # React dashboard (Vite, port 5173) — 57+ source files
+frontend/           # React dashboard (Vite, port 5173) — 70+ source files; 246 Vitest tests; 6 Playwright E2E specs
 examples/           # quickstart, custom_tool, local_llm, customer_support, code_review, mcp_integration
 docs/               # quickstart.md, architecture.md, api-reference.md, tutorials/
 sdk/python/         # Async HTTP client SDK (nexus_client.py)
-tests/              # pytest suite (1965 tests — phases 0-32; + 5 slow Ollama tests)
+tests/              # pytest suite (2090 tests — phases 0-32 + contract suite; + 5 slow Ollama tests)
 ```
 
 ## CLI
@@ -344,8 +344,16 @@ nexus plugin verify [plugin-name]                 # SHA-256 tamper detection (al
 | GET | /v1/health | Health check with service probes |
 | GET | /v2/workflows | List workflows |
 | POST | /v2/workflows | Create workflow |
+| GET | /v2/workflows/templates | List built-in workflow templates |
+| POST | /v2/workflows/from-template/{template_id} | Create workflow from template |
+| POST | /v2/workflows/generate | Generate workflow from natural language description |
+| POST | /v2/workflows/import | Import workflow JSON |
 | GET | /v2/workflows/{id} | Get workflow detail |
 | PUT | /v2/workflows/{id} | Update workflow definition |
+| PATCH | /v2/workflows/{id}/status | Update workflow status (active / paused / archived) |
+| DELETE | /v2/workflows/{id} | Delete workflow |
+| GET | /v2/workflows/{id}/export | Export workflow as JSON |
+| POST | /v2/workflows/{id}/duplicate | Duplicate workflow |
 | POST | /v2/workflows/{id}/activate | Activate a workflow |
 | POST | /v2/workflows/{id}/pause | Pause an active workflow |
 | GET | /v2/workflows/{id}/versions | Version history |
@@ -371,6 +379,29 @@ nexus plugin verify [plugin-name]                 # SHA-256 tamper detection (al
 | DELETE | /v2/marketplace/{name} | Uninstall a plugin |
 | GET | /v2/jobs/{job_id} | Poll background job status |
 | GET | /v2/jobs/{job_id}/result | Get background job result |
+| GET | /v2/credentials | List credentials (secrets never returned) |
+| POST | /v2/credentials | Create credential |
+| DELETE | /v2/credentials/{id} | Delete credential |
+| GET | /v2/credentials/types | List supported credential types |
+| POST | /v2/credentials/test | Test a credential (no :id — stateless probe) |
+| POST | /v2/credentials/{id}/peek | Return last 4 chars of secret (read-only) |
+| POST | /v2/credentials/{id}/rotate | Rotate credential secret |
+| GET | /v2/skills | List skills |
+| POST | /v2/skills | Create skill |
+| GET | /v2/skills/{id} | Get skill |
+| PATCH | /v2/skills/{id} | Update skill (auto-increments version) |
+| DELETE | /v2/skills/{id} | Delete skill |
+| POST | /v2/skills/{id}/duplicate | Duplicate skill |
+| GET | /v2/skills/{id}/export | Export skill as JSON |
+| POST | /v2/skills/import | Import skill JSON |
+| GET | /v2/skills/{id}/diff | Diff two skill versions (`?from_version=1&to_version=2`) |
+| GET | /v2/skills/{id}/invocations | Invocation history |
+| GET | /v2/mcp/servers | List MCP servers |
+| POST | /v2/mcp/servers | Register MCP server (stdio / sse / streamable_http) |
+| DELETE | /v2/mcp/servers/{id} | Remove MCP server |
+| GET | /v2/mcp/servers/{id}/tools | List tools exposed by a server |
+| POST | /v2/mcp/servers/{id}/reconnect | Reconnect and refresh tool list |
+| GET | /v2/events/stream | SSE event stream — requires `?token=<jwt>` |
 
 Interactive API docs: `http://localhost:8000/docs`
 
@@ -510,6 +541,35 @@ flowchart LR
 | 30 | Test suite v2 — 113 fast tests across 8 new files (workflows, dag_engine, credentials, mcp, triggers, http_tool, code_sandbox, api_v2) + 5 Ollama live-LLM tests; bugs fixed in `generator.py` (._validator), Ollama client (num_ctx=8192, 120s timeout) | ✅ Done |
 | 31 | Infrastructure v2 — nexus-scheduler singleton (Redis distributed lock + heartbeat), nginx reverse proxy (prod profile), chroma service, API healthcheck gating worker/scheduler startup, `frontend/nginx.conf` v2 proxy, dev hot-reload overrides, Makefile targets (`infra`/`worker`/`scheduler`/`prod`/`scale-workers`/`test-fast`/`logs-*`/`fmt`), `.env.example` v2 vars | ✅ Done |
 | 32 | Examples & Docs v2 — 6 real-world workflow examples (lead qualification, lead nurturing, AI email outreach, content repurposing, personal finance tracker, stock analysis); `examples/_shared/` utilities (`nexus_client`, `demo_data`); `nexus credential check` CLI command | ✅ Done |
+
+## Testing
+
+NEXUS uses a 3-tier test pyramid: backend HTTP contracts, frontend component tests, and full E2E browser flows.
+
+### Run tests
+
+```bash
+# Tier 1 — Backend: unit, integration, and HTTP contract tests
+pytest tests/ -m "not slow"                          # 2090 tests (~60s)
+pytest tests/test_frontend_contracts.py -v           # 60 contract tests (C1–C60)
+
+# Tier 2 — Frontend: component tests with MSW (no real server needed)
+cd frontend && npm run test:run                       # 246 Vitest tests
+npm run test:coverage                                # with v8 coverage report
+
+# Tier 3 — E2E: Playwright full-browser tests (requires both servers running)
+make run &                                           # API on :8000
+cd frontend && npm run dev &                         # Frontend on :5173
+npx playwright install && npx playwright test
+```
+
+### Test pyramid
+
+| Tier | Tool | Count | Scope |
+|------|------|-------|-------|
+| 1 — HTTP contracts | pytest + ASGI transport | 60 | Response shapes, auth, tenant isolation, error bodies |
+| 2 — Component tests | Vitest + MSW | 246 | Every UI page: auth, workflows, executions, credentials, skills, MCP servers, dashboard, SSE |
+| 3 — E2E | Playwright (Chromium) | 6 specs | Login, full workflow lifecycle, credentials CRUD, skills CRUD, MCP servers, error resilience |
 
 ## Contributing
 

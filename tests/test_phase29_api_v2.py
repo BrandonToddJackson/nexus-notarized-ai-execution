@@ -797,7 +797,7 @@ class TestDeleteExecution:
         chain.id = "exec-1"
         chain.status = "completed"
         ledger = MagicMock()
-        ledger.get_chain = MagicMock(return_value=chain)
+        ledger.get_chain = AsyncMock(return_value=chain)
         ledger.delete_chain = MagicMock()
         self.app.state.ledger = ledger
 
@@ -810,7 +810,7 @@ class TestDeleteExecution:
         chain = MagicMock()
         chain.status = "running"
         ledger = MagicMock()
-        ledger.get_chain = MagicMock(return_value=chain)
+        ledger.get_chain = AsyncMock(return_value=chain)
         self.app.state.ledger = ledger
         with TestClient(self.app) as client:
             resp = client.delete("/v2/executions/exec-1")
@@ -818,7 +818,7 @@ class TestDeleteExecution:
 
     def test_delete_not_found_returns_404(self):
         ledger = MagicMock()
-        ledger.get_chain = MagicMock(return_value=None)
+        ledger.get_chain = AsyncMock(return_value=None)
         self.app.state.ledger = ledger
         with TestClient(self.app) as client:
             resp = client.delete("/v2/executions/no-such")
@@ -839,7 +839,7 @@ class TestStreamExecution:
         chain = MagicMock()
         chain.status = "completed"
         ledger = MagicMock()
-        ledger.get_chain = MagicMock(return_value=chain)
+        ledger.get_chain = AsyncMock(return_value=chain)
         ledger.get_seals_for_chain = MagicMock(return_value=[])
         self.app.state.ledger = ledger
         with TestClient(self.app) as client:
@@ -853,7 +853,7 @@ class TestStreamExecution:
         chain = MagicMock()
         chain.status = "completed"
         ledger = MagicMock()
-        ledger.get_chain = MagicMock(return_value=chain)
+        ledger.get_chain = AsyncMock(return_value=chain)
         ledger.get_seals_for_chain = MagicMock(return_value=[seal])
         self.app.state.ledger = ledger
         with TestClient(self.app) as client:
