@@ -146,7 +146,7 @@ async def lifespan(app: FastAPI):
     credential_encryption = CredentialEncryption(key=config.credential_encryption_key)
     vault = CredentialVault(encryption=credential_encryption)
     app.state.vault = vault
-    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier, vault=vault)
+    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier, vault=vault, config=config)
     think_act_gate = ThinkActGate()
     continue_complete_gate = ContinueCompleteGate()
     escalate_gate = EscalateGate()
@@ -183,6 +183,9 @@ async def lifespan(app: FastAPI):
     # 11. Trigger system
     async with async_session() as trigger_session:
         from nexus.db.repository import Repository as TriggerRepo
+        from nexus.db.models import WorkflowModel as _WFModel
+        from nexus.types import WorkflowDefinition, WorkflowStatus
+        from sqlalchemy import select as _sa_select
         trigger_repo = TriggerRepo(trigger_session)
         workflow_manager = WorkflowManager(repository=trigger_repo, config=config)
         trigger_manager = TriggerManager(engine, workflow_manager, trigger_repo, event_bus, config)
@@ -191,11 +194,40 @@ async def lifespan(app: FastAPI):
         trigger_manager.set_cron_scheduler(cron_scheduler)
         await cron_scheduler.start()
 
+        # Populate in-memory store from DB so workflows survive session close
+        _wf_rows = (await trigger_session.execute(_sa_select(_WFModel))).scalars().all()
+        for _row in _wf_rows:
+            try:
+                _steps = [{**s, "workflow_id": _row.id} for s in (_row.steps or [])]
+                _edges = [{**e, "workflow_id": _row.id} for e in (_row.edges or [])]
+                _wf = WorkflowDefinition(
+                    id=_row.id,
+                    tenant_id=_row.tenant_id,
+                    name=_row.name,
+                    description=_row.description or "",
+                    version=_row.version,
+                    status=WorkflowStatus(_row.status),
+                    trigger_config=_row.trigger_config or {},
+                    steps=_steps,
+                    edges=_edges,
+                    created_at=_row.created_at,
+                    updated_at=_row.updated_at,
+                    created_by=_row.created_by or "",
+                    tags=_row.tags or [],
+                    settings=_row.settings or {},
+                )
+                workflow_manager._store[_wf.id] = _wf
+            except Exception:
+                pass  # skip malformed rows
+
     app.state.event_bus        = event_bus
     app.state.workflow_manager = workflow_manager
     app.state.trigger_manager  = trigger_manager
     app.state.webhook_handler  = webhook_handler
     app.state.cron_scheduler   = cron_scheduler
+
+    # Wire workflow_manager into engine (created before trigger system)
+    engine.workflow_manager = workflow_manager
 
     # 12. AmbiguityResolver + WorkflowGenerator (Phase 23.1)
     from nexus.workflows.ambiguity import AmbiguityResolver
@@ -247,6 +279,16 @@ async def lifespan(app: FastAPI):
         app.state.arq_pool = None
         app.state.dispatcher = None
         logger.warning("arq not installed — background workers disabled")
+
+    # 16. RAG-Anything adapter (optional)
+    if config.rag_anything_enabled:
+        from nexus.knowledge.rag_adapter import RAGAnythingAdapter
+        from nexus.tools.builtin.rag_tools import set_rag_adapter
+        app.state.rag_adapter = RAGAnythingAdapter(config, llm_client, embedding_service)
+        set_rag_adapter(app.state.rag_adapter)
+        logger.info("RAG-Anything adapter initialized")
+    else:
+        app.state.rag_adapter = None
 
     logger.info(f"NEXUS v{__version__} ready — {len(tool_registry.list_tools())} tools registered")
 

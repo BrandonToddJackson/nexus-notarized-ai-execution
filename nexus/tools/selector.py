@@ -63,6 +63,52 @@ class ToolSelector:
             return await self._select_with_llm(task, persona, context, available)
         return self._select_rule_based(task, persona, context, available)
 
+    def _coerce_params(self, tool_defn, raw_params: dict) -> dict:
+        """Coerce LLM-returned params to match the tool's actual schema.
+
+        Three passes:
+        1. Keep params whose keys exactly match the schema.
+        2. For any required param still missing, look for a value in raw_params
+           whose key is a substring/superstring of the required name (fuzzy remap).
+        3. For any required param still missing, fall back to the first raw value
+           or an empty string.
+
+        This prevents TypeError from wrong keyword argument names.
+        """
+        if not tool_defn or not tool_defn.parameters:
+            return raw_params
+        schema_props: dict = tool_defn.parameters.get("properties", {})
+        if not schema_props:
+            return raw_params
+
+        coerced: dict = {}
+        used_raw_keys: set = set()
+
+        # Pass 1: exact match
+        for key in schema_props:
+            if key in raw_params:
+                coerced[key] = raw_params[key]
+                used_raw_keys.add(key)
+
+        # Pass 2: fuzzy remap for missing required params
+        unused_raw = {k: v for k, v in raw_params.items() if k not in used_raw_keys}
+        for key in schema_props:
+            if key in coerced:
+                continue
+            for raw_key, raw_val in unused_raw.items():
+                if key in raw_key or raw_key in key:
+                    coerced[key] = raw_val
+                    used_raw_keys.add(raw_key)
+                    break
+
+        # Pass 3: for any still-missing required param, use first unused value
+        unused_vals = [v for k, v in raw_params.items() if k not in used_raw_keys]
+        for key in schema_props:
+            if key not in coerced and unused_vals:
+                coerced[key] = unused_vals.pop(0)
+
+        return coerced if coerced else raw_params
+
     async def _select_with_llm(
         self,
         task: str,
@@ -70,13 +116,29 @@ class ToolSelector:
         context,
         available,
     ) -> "IntentDeclaration":
-        """Use LLM to pick the best tool and build parameters."""
+        """Use LLM with sequential reasoning to pick the best tool and build parameters.
+
+        Reasoning steps:
+        1. Analyse what the task actually needs (data source, action type).
+        2. Match to the best available tool by name + description.
+        3. Construct exact params using the tool's declared schema.
+        4. Validate params against schema; coerce any wrong key names.
+        """
         import json
         from nexus.llm.prompts import SELECT_TOOL
 
-        tool_list = "\n".join(
-            f"- {t.name}: {t.description}" for t in available
-        )
+        def _fmt_tool(t):
+            props = t.parameters.get("properties", {}) if t.parameters else {}
+            if props:
+                params_str = ", ".join(
+                    f"{k}: {v.get('type', 'string')}" for k, v in props.items()
+                )
+                return f"- {t.name}({params_str}): {t.description}"
+            return f"- {t.name}: {t.description}"
+
+        tool_list = "\n".join(_fmt_tool(t) for t in available)
+        available_names = {t.name for t in available}
+
         kb = [d.get("content", "")[:200] for d in context.documents[:3] if d.get("source") != "session_history"]
         hist = [d.get("content", "")[:200] for d in context.documents if d.get("source") == "session_history"]
 
@@ -95,7 +157,6 @@ class ToolSelector:
                 ]
             )
             raw = response.get("content", "")
-            # Strip markdown code fences if present
             raw = raw.strip()
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
@@ -103,11 +164,35 @@ class ToolSelector:
                     raw = raw[4:]
             data = json.loads(raw.strip())
 
-            tool_name = data.get("tool", available[0].name)
-            params = data.get("params", {})
+            tool_name = data.get("tool", "")
+            params = data.get("params", {}) or {}
+            thought = data.get("thought", "")
             reasoning = data.get("reasoning", "LLM selected")
+            if thought:
+                logger.debug("[Selector] LLM reasoning: %s", thought)
 
-            tool_defn = next((t for t in available if t.name == tool_name), available[0])
+            # If LLM returned a tool not in the available list, trust it anyway —
+            # Gate 1 (scope check) will block execution if the persona lacks permission.
+            if tool_name not in available_names:
+                logger.warning(
+                    "[Selector] LLM returned unknown tool %r (not in persona's allowed tools) "
+                    "— passing through; Gate 1 will block if unauthorized", tool_name
+                )
+                return IntentDeclaration(
+                    task_description=task,
+                    planned_action=self._natural_planned_action(tool_name, task),
+                    tool_name=tool_name,
+                    tool_params=params,
+                    resource_targets=[],
+                    reasoning=reasoning,
+                    confidence=0.8,
+                )
+
+            tool_defn = next(t for t in available if t.name == tool_name)
+
+            # Coerce params to match the tool's actual schema (prevents TypeError)
+            params = self._coerce_params(tool_defn, params)
+
             return IntentDeclaration(
                 task_description=task,
                 planned_action=self._natural_planned_action(tool_name, task),
@@ -205,11 +290,23 @@ class ToolSelector:
 
         Converts a glob pattern like "kb:*" into a specific target like "kb:query"
         that will correctly fnmatch against the persona's resource_scopes.
+
+        Tools with resource_pattern="*" are unrestricted — return [] so the
+        scope gate skips the resource check rather than deriving a raw param
+        value that won't match any namespaced scope.
         """
         pattern = tool_defn.resource_pattern  # e.g., "kb:*", "email:*", "*"
         if "*" not in pattern:
             return [pattern]
         prefix = pattern[: pattern.index("*")]  # "kb:"
+        # No prefix means tool is globally unrestricted — don't derive a target
+        # that would fail fnmatch against namespaced scopes like "kb:*"
+        if not prefix:
+            # No namespace prefix — use first param value as slug if available
+            if params:
+                val = str(list(params.values())[0])
+                return [val.lower().replace(" ", "_")[:30]]
+            return ["*"]
         if params:
             # Use first param value as a slug for the specific resource
             val = str(list(params.values())[0])

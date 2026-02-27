@@ -4,8 +4,10 @@ The last stop before a tool actually runs.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any, Optional, Tuple
 
+from nexus.exceptions import ToolError
 from nexus.types import IntentDeclaration
 from nexus.tools.registry import ToolRegistry
 from nexus.tools.sandbox import Sandbox
@@ -13,8 +15,40 @@ from nexus.core.verifier import IntentVerifier
 
 if TYPE_CHECKING:
     from nexus.credentials.vault import CredentialVault
+    from nexus.config import NexusConfig
 
 logger = logging.getLogger(__name__)
+
+_TEMPLATE_RE = re.compile(r"\{\{config\.(\w+)\}\}")
+
+
+def _resolve_config_templates(params: dict, config: "NexusConfig") -> dict:
+    """Replace {{config.field_name}} in string param values with NexusConfig values.
+
+    This lets workflow tool_params reference secrets stored in .env without
+    exposing them to the AI planner or the ledger (sanitize_tool_params strips
+    them before sealing).
+
+    Example:
+        params = {"params": {"api_key": "{{config.instantly_api_key}}"}}
+        → {"params": {"api_key": "abc123"}}  (if config.instantly_api_key = "abc123")
+    """
+    if config is None:
+        return params
+
+    def _resolve_value(v: Any) -> Any:
+        if isinstance(v, str):
+            def _sub(m: re.Match) -> str:
+                field = m.group(1)
+                return str(getattr(config, field, m.group(0)))
+            return _TEMPLATE_RE.sub(_sub, v)
+        if isinstance(v, dict):
+            return {k: _resolve_value(val) for k, val in v.items()}
+        if isinstance(v, list):
+            return [_resolve_value(item) for item in v]
+        return v
+
+    return {k: _resolve_value(v) for k, v in params.items()}
 
 
 class ToolExecutor:
@@ -26,6 +60,7 @@ class ToolExecutor:
         sandbox: Sandbox,
         verifier: IntentVerifier,
         vault: Optional["CredentialVault"] = None,
+        config: Optional["NexusConfig"] = None,
     ):
         """
         Args:
@@ -34,11 +69,14 @@ class ToolExecutor:
             verifier: Intent cross-verifier
             vault: Optional credential vault; when present, injects credentials
                    into tool_params if ``credential_id`` is set on the intent.
+            config: NexusConfig instance; when present, resolves {{config.X}}
+                    template strings in tool_params before execution.
         """
         self.registry = registry
         self.sandbox = sandbox
         self.verifier = verifier
         self.vault = vault
+        self.config = config
 
     async def execute(
         self,
@@ -77,8 +115,9 @@ class ToolExecutor:
             logger.warning(f"[Executor] Intent verification failed for '{intent.tool_name}': {exc}")
             return None, "Intent verification failed"
 
-        # Step 3: Inject credentials from vault (after gates, before execution)
+        # Step 3: Resolve {{config.X}} templates then inject vault credentials
         params = dict(intent.tool_params)
+        params = _resolve_config_templates(params, self.config)
         credential_id = params.pop("credential_id", None)
         if credential_id and self.vault is not None:
             try:
@@ -99,6 +138,10 @@ class ToolExecutor:
                 tool_fn, params, definition.timeout_seconds
             )
             return result, None
+        except ToolError as te:
+            # Surface the tool's own error message (e.g. "API key invalid", "url is required")
+            logger.warning(f"[Executor] ToolError for '{intent.tool_name}': {te}")
+            return None, str(te)
         except Exception as exc:
             logger.error(f"[Executor] Tool execution error for '{intent.tool_name}': {exc}", exc_info=True)
             return None, "Tool execution failed"

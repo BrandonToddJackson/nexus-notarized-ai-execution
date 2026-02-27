@@ -5,6 +5,7 @@ YAML loaders: load_personas_yaml(), load_tools_yaml()
 """
 
 import warnings
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -136,6 +137,19 @@ class NexusConfig(BaseSettings):
     plugin_install_timeout: float = 120.0          # pip install subprocess timeout (seconds)
     plugin_strict_scan: bool = False               # block import if static scan finds suspicious patterns
     plugin_dry_run_check: bool = True              # pip --dry-run before install (CVE-2025-27607)
+
+    # ── RAG-Anything (optional) ──
+    rag_anything_enabled: bool = False
+    rag_anything_dir: str = "/tmp/nexus_rag"
+    rag_anything_parser: str = "mineru"  # mineru | docling | paddleocr
+
+    # ── Third-party API keys ──────────────────────────────────────────────────
+    # Resolved at tool execution time via {{config.X}} template syntax in tool_params.
+    # Accept both NEXUS_INSTANTLY_API_KEY and bare INSTANTLY_API_KEY from .env.
+    instantly_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("NEXUS_INSTANTLY_API_KEY", "INSTANTLY_API_KEY"),
+    )
 
     model_config = {"env_prefix": "NEXUS_", "env_file": ".env", "extra": "ignore"}
 

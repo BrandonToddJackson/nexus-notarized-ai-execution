@@ -197,6 +197,8 @@ flowchart LR
         FILE[file_read · file_write]
         COMMS[send_email]
         DATA[knowledge_search · compute_stats]
+        RAG["rag_ingest · rag_query\n(RAGAnything multimodal)"]
+        INSTANTLY["instantly_audit · instantly_get_campaigns\ninstantly_create_campaign · instantly_activate_campaign\n+ 5 more campaign tools"]
         HTTP[http_request + data_transform\n15 pipeline operations]
         FE[generate_frontend_design]
     end
@@ -223,6 +225,105 @@ flowchart LR
 ```
 
 Same model throughout: one agent, multiple personas (see top of README). Workflows can use **multiple personas** (per-step `persona_name`) and **parallel branches** (PARALLEL step type).
+
+## RAG Knowledge Tools
+
+Two built-in tools for multimodal knowledge ingestion and retrieval — gated and sealed like every other tool call:
+
+| Tool | Description | Risk |
+|------|-------------|------|
+| `rag_ingest` | Ingest text, URL, or uploaded file into a named knowledge namespace | MEDIUM |
+| `rag_query` | Semantic search over ingested knowledge (hybrid mode by default) | LOW |
+
+Use these to feed campaign briefs, ICP documents, or competitor research into a named namespace, then query that context in later workflow steps. Results flow through `session_history` into the next tool call automatically.
+
+```bash
+# Enable RAG
+pip install -e ".[rag]"
+
+# In .env
+NEXUS_RAG_ANYTHING_ENABLED=true
+NEXUS_RAG_ANYTHING_DIR=/tmp/nexus_rag   # working dir for vector store + parsed docs
+```
+
+```bash
+# Ingest a campaign brief via the API
+curl -X POST http://localhost:8000/v1/knowledge/multimodal \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "content=Target audience: SaaS founders, 20-200 employees, using Salesforce" \
+  -F "namespace=cold_campaign"
+
+# Query it in a task
+curl -X POST http://localhost:8000/v1/execute \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"task": "Find leads matching our ICP", "persona": "campaign_researcher"}'
+```
+
+## Campaign Automation (Instantly.ai)
+
+Nine built-in tools cover the complete cold email campaign lifecycle — every call gated through all 4 anomaly gates and sealed in the ledger.
+
+### Tools
+
+| Tool | Purpose | Risk |
+|------|---------|------|
+| `instantly_audit` | Full health report: campaigns, lead counts, cross-campaign dedup, sender warmup, recommendations | LOW |
+| `instantly_get_campaigns` | List all campaigns with status | LOW |
+| `instantly_get_campaign_analytics` | Send/open/reply stats for a specific campaign | LOW |
+| `instantly_get_leads` | Leads enrolled in a campaign | LOW |
+| `instantly_get_sender_health` | Warmed sender accounts + daily send capacity | LOW |
+| `instantly_add_leads` | Add leads to a campaign with automatic deduplication | MEDIUM |
+| `instantly_move_leads` | Move leads between lists and campaigns | MEDIUM |
+| `instantly_create_campaign` | Create campaign with email sequence + warmed senders (idempotent) | HIGH |
+| `instantly_activate_campaign` | Launch campaign — emails begin sending on next scheduled window | HIGH |
+
+`HIGH` risk tools have `requires_approval=True`. Gate 1 enforces persona scope; no campaign is created or activated unless the active persona explicitly has that tool in its `allowed_tools`.
+
+### Campaign Personas
+
+Three seeded personas map to the three phases of a campaign:
+
+| Persona | Role | Key Tools |
+|---------|------|-----------|
+| `campaign_researcher` | ICP research, lead discovery, external data fetching | `rag_query`, `web_search`, `web_fetch`, `instantly_audit` |
+| `campaign_outreach` | Build and launch campaigns, add leads | `instantly_create_campaign`, `instantly_add_leads`, `instantly_activate_campaign` |
+| `campaign_optimizer` | Monitor performance, tune deliverability | `instantly_audit`, `instantly_get_sender_health`, `compute_stats` |
+
+### Full Campaign Lifecycle
+
+```bash
+# 1. Audit current state — see all campaigns, sender warmup, duplicate leads
+curl -X POST http://localhost:8000/v1/execute \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"task": "Run a full campaign audit", "persona": "campaign_optimizer"}'
+
+# 2. Check sender capacity
+curl -X POST http://localhost:8000/v1/execute \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"task": "Check sender health and warmup status", "persona": "campaign_optimizer"}'
+
+# 3. Create a campaign (HIGH risk — Gate 1 enforces campaign_outreach scope)
+curl -X POST http://localhost:8000/v1/execute \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "task": "Create a campaign called Q2 Outreach, subject Quick question about your data stack, body Hi {{first_name}} I noticed...",
+    "persona": "campaign_outreach"
+  }'
+
+# 4. Add leads, then activate (returns campaign_id from previous step via session_history)
+curl -X POST http://localhost:8000/v1/execute \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"task": "Add lead john@acme.com to campaign <id> then activate it", "persona": "campaign_outreach"}'
+```
+
+Or use the **Execute page** in the dashboard: select a persona, type a task in plain English — the gate visualizer shows all 4 gates evaluating in real time.
+
+### Configuration
+
+```bash
+INSTANTLY_API_KEY=<your-instantly-v2-api-key>   # Bearer token from app.instantly.ai → Settings → API Keys
+```
 
 ## Key Concepts
 
@@ -272,7 +373,7 @@ nexus/
 ├── knowledge/      # Cognitive plane: embeddings, vector store, context
 ├── reasoning/      # Decision gates: think/act, continue/complete, escalate
 ├── tools/          # Execution: registry, sandbox v2 (Py/JS/TS), executor, built-ins
-│   └── builtin/    # web, file, comms, data, http_request, data_transform, frontend_design
+│   └── builtin/    # web, file, comms, data, http_request, data_transform, frontend_design, rag_tools, instantly
 ├── workflows/      # DAG definition: dag.py, validator.py, manager.py (v2)
 ├── workers/        # ARQ background workers: queue.py (tasks), dispatcher.py (inline/bg routing)
 ├── credentials/    # Credential vault: encryption.py (Fernet), vault.py (v2)
@@ -462,6 +563,18 @@ NEXUS_DEFAULT_LLM_MODEL=anthropic/claude-sonnet-4-20250514
 NEXUS_ENV=production                        # Disables demo key fallback
 ```
 
+**Integrations:**
+
+```bash
+# Instantly.ai campaign tools
+INSTANTLY_API_KEY=<your-instantly-v2-api-key>   # Bearer token — app.instantly.ai → Settings → API Keys
+
+# RAG knowledge tools (optional — requires pip install -e ".[rag]")
+NEXUS_RAG_ANYTHING_ENABLED=false                # Set true to enable multimodal RAG
+NEXUS_RAG_ANYTHING_DIR=/tmp/nexus_rag           # Working directory for parsed docs + vector index
+NEXUS_RAG_ANYTHING_PARSER=mineru                # Document parser: mineru | docling | paddleocr
+```
+
 **v2 additions — set before using workflow, credential, or MCP features (Phase 15+):**
 
 ```bash
@@ -541,6 +654,7 @@ flowchart LR
 | 30 | Test suite v2 — 113 fast tests across 8 new files (workflows, dag_engine, credentials, mcp, triggers, http_tool, code_sandbox, api_v2) + 5 Ollama live-LLM tests; bugs fixed in `generator.py` (._validator), Ollama client (num_ctx=8192, 120s timeout) | ✅ Done |
 | 31 | Infrastructure v2 — nexus-scheduler singleton (Redis distributed lock + heartbeat), nginx reverse proxy (prod profile), chroma service, API healthcheck gating worker/scheduler startup, `frontend/nginx.conf` v2 proxy, dev hot-reload overrides, Makefile targets (`infra`/`worker`/`scheduler`/`prod`/`scale-workers`/`test-fast`/`logs-*`/`fmt`), `.env.example` v2 vars | ✅ Done |
 | 32 | Examples & Docs v2 — 6 real-world workflow examples (lead qualification, lead nurturing, AI email outreach, content repurposing, personal finance tracker, stock analysis); `examples/_shared/` utilities (`nexus_client`, `demo_data`); `nexus credential check` CLI command | ✅ Done |
+| 33 | RAG + Campaign Automation — `rag_ingest`/`rag_query` multimodal knowledge tools; 9 Instantly.ai campaign tools (`instantly_audit`, `instantly_create_campaign`, `instantly_activate_campaign` + 6 more); 3 campaign personas (`campaign_researcher`, `campaign_outreach`, `campaign_optimizer`); selector fixes (LLM trust pass-through, wildcard resource targets) | ✅ Done |
 
 ## Testing
 
@@ -550,7 +664,7 @@ NEXUS uses a 3-tier test pyramid: backend HTTP contracts, frontend component tes
 
 ```bash
 # Tier 1 — Backend: unit, integration, and HTTP contract tests
-pytest tests/ -m "not slow"                          # 2090 tests (~60s)
+pytest tests/ -m "not slow"                          # 2097 tests (~60s)
 pytest tests/test_frontend_contracts.py -v           # 60 contract tests (C1–C60)
 
 # Tier 2 — Frontend: component tests with MSW (no real server needed)
