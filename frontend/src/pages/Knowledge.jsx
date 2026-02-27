@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import api from '../lib/api'
+import RagSourcePanel from '../components/knowledge/RagSourcePanel'
 
 export default function Knowledge() {
   // Ingest state
@@ -19,6 +20,8 @@ export default function Knowledge() {
   const [results, setResults] = useState(null)
   const [querying, setQuerying] = useState(false)
   const [queryError, setQueryError] = useState(null)
+  const [ragPanelOpen, setRagPanelOpen] = useState(false)
+  const [lastRagDocId, setLastRagDocId] = useState(null)
 
   const fetchNamespaces = async () => {
     setNsLoading(true)
@@ -134,6 +137,32 @@ export default function Knowledge() {
             {ingesting ? 'Ingesting...' : 'Ingest'}
           </button>
         </form>
+      </div>
+
+      {/* Section 1b: Multimodal RAG */}
+      <div className="bg-gray-900 border border-gray-800 rounded-lg p-6 mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xl font-semibold">Multimodal RAG</h2>
+          <button
+            onClick={() => setRagPanelOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            Add RAG Source
+          </button>
+        </div>
+        <p className="text-sm text-gray-400 mb-3">
+          Ingest PDFs, URLs, or text via RAGAnything for multimodal campaign context.
+        </p>
+        {lastRagDocId && (
+          <div className="bg-green-900/50 border border-green-700 rounded-lg p-3 text-green-300 text-sm">
+            Last ingested: <code className="font-mono">{lastRagDocId}</code>
+          </div>
+        )}
+        <RagSourcePanel
+          open={ragPanelOpen}
+          onClose={() => setRagPanelOpen(false)}
+          onSuccess={(docId) => { setLastRagDocId(docId); setRagPanelOpen(false) }}
+        />
       </div>
 
       {/* Section 2: Namespaces */}

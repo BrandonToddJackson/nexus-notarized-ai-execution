@@ -119,6 +119,7 @@ async def startup(ctx: dict) -> None:
     from nexus.db.repository import Repository
     from nexus.triggers import EventBus
     from nexus.types import PersonaContract, RiskLevel
+    from nexus.workflows.manager import WorkflowManager
 
     logger.info("NEXUS worker starting up...")
     await init_db()
@@ -178,7 +179,7 @@ async def startup(ctx: dict) -> None:
     sandbox = Sandbox()
     credential_encryption = CredentialEncryption(key=config.credential_encryption_key)
     vault = CredentialVault(encryption=credential_encryption)
-    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier, vault=vault)
+    tool_executor = ToolExecutor(registry=tool_registry, sandbox=sandbox, verifier=verifier, vault=vault, config=config)
     think_act_gate = ThinkActGate()
     continue_complete_gate = ContinueCompleteGate()
     escalate_gate = EscalateGate()
@@ -203,6 +204,40 @@ async def startup(ctx: dict) -> None:
         config=config,
         event_bus=event_bus,
     )
+
+    # WorkflowManager — load from DB so workflows are available in the worker
+    async with async_session() as wf_session:
+        from nexus.db.repository import Repository as _WFRepo
+        from nexus.db.models import WorkflowModel as _WFModel
+        from nexus.types import WorkflowDefinition, WorkflowStatus
+        from sqlalchemy import select as _sa_select
+        wf_repo = _WFRepo(wf_session)
+        workflow_manager = WorkflowManager(repository=wf_repo, config=config)
+        _wf_rows = (await wf_session.execute(_sa_select(_WFModel))).scalars().all()
+        for _row in _wf_rows:
+            try:
+                _steps = [{**s, "workflow_id": _row.id} for s in (_row.steps or [])]
+                _edges = [{**e, "workflow_id": _row.id} for e in (_row.edges or [])]
+                _wf = WorkflowDefinition(
+                    id=_row.id,
+                    tenant_id=_row.tenant_id,
+                    name=_row.name,
+                    description=_row.description or "",
+                    version=_row.version,
+                    status=WorkflowStatus(_row.status),
+                    trigger_config=_row.trigger_config or {},
+                    steps=_steps,
+                    edges=_edges,
+                    created_at=_row.created_at,
+                    updated_at=_row.updated_at,
+                    created_by=_row.created_by or "",
+                    tags=_row.tags or [],
+                    settings=_row.settings or {},
+                )
+                workflow_manager._store[_wf.id] = _wf
+            except Exception:
+                pass  # skip malformed rows
+    engine.workflow_manager = workflow_manager
 
     mcp_client = MCPClient()
     mcp_adapter = MCPToolAdapter(tool_registry, mcp_client, None, vault)
