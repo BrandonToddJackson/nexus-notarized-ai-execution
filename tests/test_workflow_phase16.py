@@ -402,9 +402,13 @@ class TestWorkflowValidator:
         errors = validator.validate(_wf([_step("s1")], []))
         assert errors == []
 
-    def test_returns_list(self, validator):
-        errors = validator.validate(_wf([], []))
+    def test_returns_list_of_strings_on_error(self, validator):
+        steps = [_step("s1"), _step("s2")]
+        edges = [_edge("e1", "s1", "s2"), _edge("e2", "s2", "s1")]
+        errors = validator.validate(_wf(steps, edges))
         assert isinstance(errors, list)
+        assert len(errors) >= 1
+        assert all(isinstance(e, str) for e in errors)
 
     # Check 1: cycle
     def test_cycle_detected(self, validator):

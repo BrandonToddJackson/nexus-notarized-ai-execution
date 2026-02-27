@@ -606,20 +606,31 @@ class TestWorkflowGeneratorConfig:
 class TestWorkflowGeneratorExports:
 
     def test_import_from_workflows(self):
-        from nexus.workflows import WorkflowGenerator  # noqa: F401
-        assert WorkflowGenerator is not None
+        from nexus.workflows import WorkflowGenerator
+        assert hasattr(WorkflowGenerator, "generate")
+        assert hasattr(WorkflowGenerator, "refine")
+        assert hasattr(WorkflowGenerator, "explain")
 
     def test_import_prompts(self):
-        from nexus.llm.prompts import (  # noqa: F401
+        from nexus.llm.prompts import (
             EXPLAIN_WORKFLOW,
             GENERATE_WORKFLOW,
             REFINE_WORKFLOW,
         )
-        assert GENERATE_WORKFLOW
-        assert REFINE_WORKFLOW
-        assert EXPLAIN_WORKFLOW
+        # GENERATE_WORKFLOW must reference step/edge schemas and tool context
+        assert "{tool_context}" in GENERATE_WORKFLOW
+        assert "steps" in GENERATE_WORKFLOW
+        assert "edges" in GENERATE_WORKFLOW
+        assert len(GENERATE_WORKFLOW) > 200
+        # REFINE_WORKFLOW must reference current workflow and feedback
+        assert "{current_workflow_json}" in REFINE_WORKFLOW
+        assert "{feedback}" in REFINE_WORKFLOW
+        assert len(REFINE_WORKFLOW) > 100
+        # EXPLAIN_WORKFLOW must reference workflow JSON
+        assert "{workflow_json}" in EXPLAIN_WORKFLOW
+        assert len(EXPLAIN_WORKFLOW) > 100
 
     def test_import_exception(self):
-        from nexus.exceptions import WorkflowGenerationError  # noqa: F401
-        assert WorkflowGenerationError is not None
+        from nexus.exceptions import WorkflowGenerationError
         assert issubclass(WorkflowGenerationError, Exception)
+        assert WorkflowGenerationError is not Exception  # must be a distinct subclass

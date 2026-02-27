@@ -693,3 +693,58 @@ async def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(asyncio.run(main()))
+
+
+# ── Pytest wrappers ─────────────────────────────────────────────────────────────
+# These make pytest collect and run 4 representative scenarios.
+# Marked @pytest.mark.slow because build_engine_with_workflow_manager loads the
+# sentence-transformers embedding model (~5-15s). Excluded from default runs via
+#   pytest -m "not slow"
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def _phase17_engine():
+    """Build real engine+manager once per module (loads embedding model)."""
+    return build_engine_with_workflow_manager()
+
+
+@pytest.mark.slow
+def test_phase17_single_action_step(_phase17_engine):
+    engine, mgr = _phase17_engine
+    before = len(results)
+    asyncio.run(scenario_single_action(engine, mgr))
+    new = results[before:]
+    failed = [(n, d) for n, s, d in new if s == FAIL]
+    assert not failed, f"single_action failures: {failed}"
+
+
+@pytest.mark.slow
+def test_phase17_linear_param_resolution(_phase17_engine):
+    engine, mgr = _phase17_engine
+    before = len(results)
+    asyncio.run(scenario_linear_template(engine, mgr))
+    new = results[before:]
+    failed = [(n, d) for n, s, d in new if s == FAIL]
+    assert not failed, f"linear_template failures: {failed}"
+
+
+@pytest.mark.slow
+def test_phase17_branch_step(_phase17_engine):
+    engine, mgr = _phase17_engine
+    before = len(results)
+    asyncio.run(scenario_branch(engine, mgr))
+    new = results[before:]
+    failed = [(n, d) for n, s, d in new if s == FAIL]
+    assert not failed, f"branch failures: {failed}"
+
+
+@pytest.mark.slow
+def test_phase17_gate_blocking(_phase17_engine):
+    engine, mgr = _phase17_engine
+    before = len(results)
+    asyncio.run(scenario_inactive_raises(engine, mgr))
+    new = results[before:]
+    failed = [(n, d) for n, s, d in new if s == FAIL]
+    assert not failed, f"gate_blocking failures: {failed}"

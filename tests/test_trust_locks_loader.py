@@ -517,10 +517,11 @@ class TestChainLockContextManager:
     """chain_lock() — acquire/yield/release flow and timeout behavior."""
 
     async def test_yields_the_lock_object(self):
-        from nexus.cache.locks import chain_lock
+        from nexus.cache.locks import chain_lock, DistributedLock
         redis = _make_redis(set_return=True)
         async with chain_lock(redis, "tenant", "chain-001") as lock:
-            assert lock is not None
+            assert isinstance(lock, DistributedLock)
+            assert hasattr(lock, 'release')
 
     async def test_release_called_on_normal_exit(self):
         from nexus.cache.locks import chain_lock

@@ -327,6 +327,8 @@ class TestContextBuilder:
         result = await builder.build(tenant_id="t1", task="find info", persona=persona)
         # Should query all 3 namespaces — result is non-None
         assert isinstance(result, RetrievedContext)
+        assert result.confidence >= 0.0
+        assert isinstance(result.sources, list)
 
     @pytest.mark.asyncio
     async def test_specific_kb_scope_uses_named_namespace(self):
