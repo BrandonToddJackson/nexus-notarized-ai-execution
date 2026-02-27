@@ -260,6 +260,37 @@ async def lifespan(app: FastAPI):
     await redis_client.close()
 
 
+def register_exception_handlers(app: FastAPI) -> None:
+    """Register global exception handlers on any FastAPI app instance.
+
+    Called by create_app() for production and can be called by test harnesses
+    that build their own minimal FastAPI apps so handler behaviour is consistent.
+    """
+    from fastapi.responses import JSONResponse
+    from nexus.exceptions import AnomalyDetected, WorkflowNotFound, WorkflowValidationError
+
+    @app.exception_handler(WorkflowNotFound)
+    async def _workflow_not_found(request, exc: WorkflowNotFound):
+        return JSONResponse(
+            status_code=404,
+            content={"detail": str(exc), "workflow_id": exc.workflow_id},
+        )
+
+    @app.exception_handler(WorkflowValidationError)
+    async def _workflow_validation_error(request, exc: WorkflowValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": str(exc), "violations": exc.violations},
+        )
+
+    @app.exception_handler(AnomalyDetected)
+    async def _anomaly_detected(request, exc: AnomalyDetected):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": str(exc), "chain_id": exc.chain_id},
+        )
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
@@ -268,6 +299,8 @@ def create_app() -> FastAPI:
         version=__version__,
         lifespan=lifespan,
     )
+
+    register_exception_handlers(app)
 
     # CORS
     app.add_middleware(

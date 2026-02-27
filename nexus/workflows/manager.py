@@ -186,6 +186,19 @@ class WorkflowManager:
         existing = await self.get(workflow_id, tenant_id)
         structure_changed = steps is not None or edges is not None
 
+        # Coerce plain dicts → typed models so callers (e.g. HTTP PUT routes) don't
+        # have to build full Pydantic objects before calling update().
+        if steps is not None:
+            steps = [
+                s if isinstance(s, WorkflowStep) else WorkflowStep.model_validate(s)
+                for s in steps
+            ]
+        if edges is not None:
+            edges = [
+                e if isinstance(e, WorkflowEdge) else WorkflowEdge.model_validate(e)
+                for e in edges
+            ]
+
         updates: dict[str, Any] = {"updated_at": datetime.now(tz=timezone.utc)}
         if name is not None:
             updates["name"] = name
